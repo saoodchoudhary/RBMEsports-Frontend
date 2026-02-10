@@ -1,16 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
-import { 
-  FiTag, 
-  FiPercent, 
-  FiDollarSign, 
+import {
+  FiTag,
+  FiPercent,
+  FiDollarSign,
   FiUsers,
-  FiCalendar,
   FiCheckCircle,
   FiXCircle,
   FiSave,
@@ -25,9 +24,53 @@ import {
 import { GiPriceTag } from "react-icons/gi";
 import { MdOutlineDiscount, MdSecurity } from "react-icons/md";
 
+function toDatetimeLocalValue(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours()
+  )}:${pad(d.getMinutes())}`;
+}
+
+function parseJsonArray(text) {
+  if (!text?.trim()) return [];
+  try {
+    const val = JSON.parse(text);
+    if (Array.isArray(val)) return val;
+    return [];
+  } catch {
+    return null; // invalid json
+  }
+}
+
+function cleanStringArray(arr) {
+  return (arr || [])
+    .map((x) => (typeof x === "string" ? x.trim() : String(x || "").trim()))
+    .filter(Boolean);
+}
+
+function cleanObjectIdArray(arr) {
+  // We don't validate format strictly; just trim and filter empties
+  return cleanStringArray(arr);
+}
+
 export default function NewCouponPage() {
   const [loading, setLoading] = useState(false);
   const [activeSection, setActiveSection] = useState("basic");
+
+  // Keep textarea values as strings (better UX)
+  const [applicableTournamentIdsText, setApplicableTournamentIdsText] = useState("[]");
+  const [allowedUserIdsText, setAllowedUserIdsText] = useState("[]");
+  const [allowedBgmiIdsText, setAllowedBgmiIdsText] = useState("[]");
+
+  const [jsonErrors, setJsonErrors] = useState({
+    applicableTournamentIds: null,
+    allowedUserIds: null,
+    allowedBgmiIds: null
+  });
+
   const [form, setForm] = useState({
     code: "",
     discountType: "percent",
@@ -35,42 +78,12 @@ export default function NewCouponPage() {
     maxUses: 100,
     maxUsesPerUser: 1,
     minOrderAmount: 0,
-    expiresAt: "",
-    active: true,
-    applicableTournamentIds: [],
-    allowedUserIds: [],
-    allowedBgmiIds: []
+    expiresAt: "", // datetime-local string
+    active: true
   });
 
   function set(key, value) {
     setForm((p) => ({ ...p, [key]: value }));
-  }
-
-  async function save(e) {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const payload = {
-        ...form,
-        code: form.code.trim().toUpperCase(),
-        discountValue: Number(form.discountValue || 0),
-        maxUses: form.maxUses === "" ? null : Number(form.maxUses),
-        maxUsesPerUser: Number(form.maxUsesPerUser || 1),
-        minOrderAmount: Number(form.minOrderAmount || 0),
-        expiresAt: form.expiresAt ? new Date(form.expiresAt).toISOString() : null,
-        applicableTournamentIds: form.applicableTournamentIds.filter(Boolean),
-        allowedUserIds: form.allowedUserIds.filter(Boolean),
-        allowedBgmiIds: form.allowedBgmiIds.filter(Boolean)
-      };
-
-      await api.adminCreateCoupon(payload);
-      alert("✅ Coupon created successfully!");
-      window.location.href = "/admin/coupons";
-    } catch (error) {
-      alert(`❌ Error: ${error.message}`);
-    } finally {
-      setLoading(false);
-    }
   }
 
   const sections = [
@@ -87,6 +100,74 @@ export default function NewCouponPage() {
     { value: "free", label: "100% Free", icon: <FiGift className="w-4 h-4" /> }
   ];
 
+  const preview = useMemo(() => {
+    const code = (form.code || "").trim().toUpperCase() || "RBM50";
+    const discount =
+      form.discountType === "percent"
+        ? `${Number(form.discountValue || 0)}%`
+        : form.discountType === "flat"
+          ? `₹${Number(form.discountValue || 0)}`
+          : "100% Free";
+    return { code, discount };
+  }, [form.code, form.discountType, form.discountValue]);
+
+  function validateRestrictionJson() {
+    const a = parseJsonArray(applicableTournamentIdsText);
+    const u = parseJsonArray(allowedUserIdsText);
+    const b = parseJsonArray(allowedBgmiIdsText);
+
+    const errs = {
+      applicableTournamentIds: a === null ? "Invalid JSON (must be an array)" : null,
+      allowedUserIds: u === null ? "Invalid JSON (must be an array)" : null,
+      allowedBgmiIds: b === null ? "Invalid JSON (must be an array)" : null
+    };
+
+    setJsonErrors(errs);
+
+    const ok = !errs.applicableTournamentIds && !errs.allowedUserIds && !errs.allowedBgmiIds;
+    return { ok, parsed: { a, u, b } };
+  }
+
+  async function save(e) {
+    e.preventDefault();
+    if (!form.code?.trim()) return;
+
+    const { ok, parsed } = validateRestrictionJson();
+    if (!ok) return;
+
+    setLoading(true);
+    try {
+      const applicableTournamentIds = cleanObjectIdArray(parsed.a);
+      const allowedUserIds = cleanObjectIdArray(parsed.u);
+      const allowedBgmiIds = cleanStringArray(parsed.b);
+
+      const payload = {
+        code: form.code.trim().toUpperCase(),
+        discountType: form.discountType,
+        discountValue: Number(form.discountValue || 0),
+
+        maxUses: form.maxUses === "" ? null : Number(form.maxUses),
+        maxUsesPerUser: Number(form.maxUsesPerUser || 1),
+        minOrderAmount: Number(form.minOrderAmount || 0),
+
+        expiresAt: form.expiresAt ? new Date(form.expiresAt).toISOString() : null,
+        active: !!form.active,
+
+        applicableTournamentIds,
+        allowedUserIds,
+        allowedBgmiIds
+      };
+
+      await api.adminCreateCoupon(payload);
+      alert("✅ Coupon created successfully!");
+      window.location.href = "/admin/coupons";
+    } catch (error) {
+      alert(`❌ Error: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -97,11 +178,11 @@ export default function NewCouponPage() {
             <p className="text-slate-600 mt-1">Design discount codes for tournaments and users</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => window.history.back()}>
+            <Button variant="outline" type="button" onClick={() => window.history.back()}>
               <FiX className="w-4 h-4 mr-2" />
               Cancel
             </Button>
-            <Button onClick={save} loading={loading}>
+            <Button onClick={save} loading={loading} disabled={!form.code.trim()}>
               <FiSave className="w-4 h-4 mr-2" />
               {loading ? "Creating..." : "Create Coupon"}
             </Button>
@@ -110,13 +191,14 @@ export default function NewCouponPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Sidebar Navigation */}
+        {/* Sidebar */}
         <div className="lg:col-span-1">
           <Card className="p-4">
             <div className="space-y-1">
               {sections.map((section) => (
                 <button
                   key={section.id}
+                  type="button"
                   onClick={() => setActiveSection(section.id)}
                   className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-colors ${
                     activeSection === section.id
@@ -132,7 +214,7 @@ export default function NewCouponPage() {
               ))}
             </div>
 
-            {/* Preview Card */}
+            {/* Preview */}
             <div className="mt-8 p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-200">
               <h4 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
                 <GiPriceTag className="w-4 h-4 text-green-600" />
@@ -141,23 +223,19 @@ export default function NewCouponPage() {
               <div className="space-y-2 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-slate-600">Code:</span>
-                  <span className="font-mono font-bold text-green-700">
-                    {form.code || "RBM50"}
-                  </span>
+                  <span className="font-mono font-bold text-green-700">{preview.code}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-600">Discount:</span>
-                  <span className="font-bold text-green-600">
-                    {form.discountType === "percent" ? `${form.discountValue}%` :
-                     form.discountType === "flat" ? `₹${form.discountValue}` :
-                     "100% Free"}
-                  </span>
+                  <span className="font-bold text-green-600">{preview.discount}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-600">Status:</span>
-                  <span className={`px-2 py-1 rounded text-xs font-medium ${
-                    form.active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                  }`}>
+                  <span
+                    className={`px-2 py-1 rounded text-xs font-medium ${
+                      form.active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                    }`}
+                  >
                     {form.active ? "Active" : "Inactive"}
                   </span>
                 </div>
@@ -174,10 +252,10 @@ export default function NewCouponPage() {
           </Card>
         </div>
 
-        {/* Main Form */}
+        {/* Main */}
         <div className="lg:col-span-3">
           <form onSubmit={save}>
-            {/* Basic Info Section */}
+            {/* BASIC */}
             {activeSection === "basic" && (
               <div className="space-y-6">
                 <Card className="p-6">
@@ -201,33 +279,41 @@ export default function NewCouponPage() {
                       helperText="Will be automatically converted to uppercase"
                       icon={<FiTag className="w-4 h-4" />}
                     />
+
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Status
-                      </label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Status</label>
                       <div className="flex items-center gap-4">
                         <button
                           type="button"
                           onClick={() => set("active", true)}
                           className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border transition-colors ${
                             form.active
-                              ? 'bg-green-50 border-green-200 text-green-700'
-                              : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                              ? "bg-green-50 border-green-200 text-green-700"
+                              : "border-slate-200 text-slate-600 hover:bg-slate-50"
                           }`}
                         >
-                          <FiCheckCircle className={`w-4 h-4 ${form.active ? 'text-green-600' : 'text-slate-400'}`} />
+                          <FiCheckCircle
+                            className={`w-4 h-4 ${
+                              form.active ? "text-green-600" : "text-slate-400"
+                            }`}
+                          />
                           <span className="font-medium">Active</span>
                         </button>
+
                         <button
                           type="button"
                           onClick={() => set("active", false)}
                           className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border transition-colors ${
                             !form.active
-                              ? 'bg-red-50 border-red-200 text-red-700'
-                              : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                              ? "bg-red-50 border-red-200 text-red-700"
+                              : "border-slate-200 text-slate-600 hover:bg-slate-50"
                           }`}
                         >
-                          <FiXCircle className={`w-4 h-4 ${!form.active ? 'text-red-600' : 'text-slate-400'}`} />
+                          <FiXCircle
+                            className={`w-4 h-4 ${
+                              !form.active ? "text-red-600" : "text-slate-400"
+                            }`}
+                          />
                           <span className="font-medium">Inactive</span>
                         </button>
                       </div>
@@ -254,15 +340,13 @@ export default function NewCouponPage() {
                         Clear
                       </Button>
                     </div>
-                    <div className="text-xs text-slate-500 mt-2">
-                      Leave empty for no expiration date
-                    </div>
+                    <div className="text-xs text-slate-500 mt-2">Leave empty for no expiration date</div>
                   </div>
                 </Card>
               </div>
             )}
 
-            {/* Discount Section */}
+            {/* DISCOUNT */}
             {activeSection === "discount" && (
               <div className="space-y-6">
                 <Card className="p-6">
@@ -284,16 +368,18 @@ export default function NewCouponPage() {
                         onClick={() => set("discountType", type.value)}
                         className={`p-4 rounded-xl border-2 transition-all ${
                           form.discountType === type.value
-                            ? 'border-green-500 bg-green-50 shadow-sm'
-                            : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                            ? "border-green-500 bg-green-50 shadow-sm"
+                            : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
                         }`}
                       >
                         <div className="flex items-center gap-3">
-                          <div className={`p-2 rounded-lg ${
-                            form.discountType === type.value
-                              ? 'bg-green-100 text-green-600'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}>
+                          <div
+                            className={`p-2 rounded-lg ${
+                              form.discountType === type.value
+                                ? "bg-green-100 text-green-600"
+                                : "bg-slate-100 text-slate-600"
+                            }`}
+                          >
                             {type.icon}
                           </div>
                           <div className="text-left">
@@ -310,27 +396,27 @@ export default function NewCouponPage() {
                   {form.discountType !== "free" && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <Input
-                        label={
-                          form.discountType === "percent" 
-                            ? "Discount Percentage" 
-                            : "Discount Amount (₹)"
-                        }
+                        label={form.discountType === "percent" ? "Discount Percentage" : "Discount Amount (₹)"}
                         type="number"
                         value={form.discountValue}
                         onChange={(e) => set("discountValue", e.target.value)}
                         min="0"
                         max={form.discountType === "percent" ? "100" : undefined}
                         required
-                        icon={form.discountType === "percent" ? 
-                          <FiPercent className="w-4 h-4" /> : 
-                          <FiDollarSign className="w-4 h-4" />
+                        icon={
+                          form.discountType === "percent" ? (
+                            <FiPercent className="w-4 h-4" />
+                          ) : (
+                            <FiDollarSign className="w-4 h-4" />
+                          )
                         }
                         helperText={
-                          form.discountType === "percent" 
-                            ? "Enter percentage value (0-100)" 
+                          form.discountType === "percent"
+                            ? "Enter percentage value (0-100)"
                             : "Enter flat amount in rupees"
                         }
                       />
+
                       <Input
                         label="Minimum Order Amount (₹)"
                         type="number"
@@ -359,7 +445,7 @@ export default function NewCouponPage() {
               </div>
             )}
 
-            {/* Usage Limits Section */}
+            {/* LIMITS */}
             {activeSection === "limits" && (
               <div className="space-y-6">
                 <Card className="p-6">
@@ -411,7 +497,7 @@ export default function NewCouponPage() {
               </div>
             )}
 
-            {/* Restrictions Section */}
+            {/* RESTRICTIONS */}
             {activeSection === "restrictions" && (
               <div className="space-y-6">
                 <Card className="p-6">
@@ -428,59 +514,52 @@ export default function NewCouponPage() {
                   <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Applicable Tournament IDs
+                        Applicable Tournament IDs (JSON array)
                       </label>
                       <textarea
                         className="input font-mono text-sm"
                         rows={4}
-                        value={JSON.stringify(form.applicableTournamentIds, null, 2)}
-                        onChange={(e) => {
-                          try {
-                            set("applicableTournamentIds", JSON.parse(e.target.value));
-                          } catch {}
-                        }}
+                        value={applicableTournamentIdsText}
+                        onChange={(e) => setApplicableTournamentIdsText(e.target.value)}
                         placeholder='["tournament_id_1", "tournament_id_2"]'
                       />
-                      <div className="text-xs text-slate-500 mt-1">
-                        Leave empty or [] for all tournaments
-                      </div>
+                      {jsonErrors.applicableTournamentIds && (
+                        <div className="text-xs text-red-600 mt-1">{jsonErrors.applicableTournamentIds}</div>
+                      )}
+                      <div className="text-xs text-slate-500 mt-1">Leave empty or [] for all tournaments</div>
                     </div>
 
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Allowed User IDs
+                        Allowed User IDs (JSON array)
                       </label>
                       <textarea
                         className="input font-mono text-sm"
                         rows={4}
-                        value={JSON.stringify(form.allowedUserIds, null, 2)}
-                        onChange={(e) => {
-                          try {
-                            set("allowedUserIds", JSON.parse(e.target.value));
-                          } catch {}
-                        }}
+                        value={allowedUserIdsText}
+                        onChange={(e) => setAllowedUserIdsText(e.target.value)}
                         placeholder='["user_id_1", "user_id_2"]'
                       />
-                      <div className="text-xs text-slate-500 mt-1">
-                        Leave empty or [] for all users
-                      </div>
+                      {jsonErrors.allowedUserIds && (
+                        <div className="text-xs text-red-600 mt-1">{jsonErrors.allowedUserIds}</div>
+                      )}
+                      <div className="text-xs text-slate-500 mt-1">Leave empty or [] for all users</div>
                     </div>
 
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Allowed BGMI IDs
+                        Allowed BGMI IDs (JSON array)
                       </label>
                       <textarea
                         className="input font-mono text-sm"
                         rows={4}
-                        value={JSON.stringify(form.allowedBgmiIds, null, 2)}
-                        onChange={(e) => {
-                          try {
-                            set("allowedBgmiIds", JSON.parse(e.target.value));
-                          } catch {}
-                        }}
+                        value={allowedBgmiIdsText}
+                        onChange={(e) => setAllowedBgmiIdsText(e.target.value)}
                         placeholder='["1234567890", "0987654321"]'
                       />
+                      {jsonErrors.allowedBgmiIds && (
+                        <div className="text-xs text-red-600 mt-1">{jsonErrors.allowedBgmiIds}</div>
+                      )}
                       <div className="text-xs text-slate-500 mt-1">
                         Specific BGMI accounts allowed to use this coupon
                       </div>
@@ -490,7 +569,7 @@ export default function NewCouponPage() {
               </div>
             )}
 
-            {/* Advanced Section */}
+            {/* ADVANCED */}
             {activeSection === "advanced" && (
               <div className="space-y-6">
                 <Card className="p-6">
@@ -519,6 +598,7 @@ export default function NewCouponPage() {
                     </div>
                   </div>
 
+                  {/* simple overview based on textarea json */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="text-center p-4 border border-slate-200 rounded-xl">
                       <div className="inline-flex p-3 rounded-lg bg-blue-100 mb-3">
@@ -526,7 +606,7 @@ export default function NewCouponPage() {
                       </div>
                       <div className="font-medium text-slate-800">User Specific</div>
                       <div className="text-sm text-slate-600 mt-1">
-                        {form.allowedUserIds.length || 0} users
+                        {(parseJsonArray(allowedUserIdsText) || []).length || 0} users
                       </div>
                     </div>
                     <div className="text-center p-4 border border-slate-200 rounded-xl">
@@ -535,7 +615,7 @@ export default function NewCouponPage() {
                       </div>
                       <div className="font-medium text-slate-800">Tournament Specific</div>
                       <div className="text-sm text-slate-600 mt-1">
-                        {form.applicableTournamentIds.length || 0} tournaments
+                        {(parseJsonArray(applicableTournamentIdsText) || []).length || 0} tournaments
                       </div>
                     </div>
                     <div className="text-center p-4 border border-slate-200 rounded-xl">
@@ -556,35 +636,39 @@ export default function NewCouponPage() {
             <div className="mt-6 pt-6 border-t border-slate-200">
               <div className="flex items-center justify-between">
                 <div className="text-sm text-slate-600">
-                  {!form.code && <span className="text-red-500">⚠️ Coupon code is required</span>}
-                  {form.code && "All fields are optional except coupon code"}
+                  {!form.code.trim() ? (
+                    <span className="text-red-500">⚠️ Coupon code is required</span>
+                  ) : (
+                    "All fields are optional except coupon code"
+                  )}
                 </div>
                 <div className="flex gap-3">
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     type="button"
                     onClick={() => {
-                      const sectionIndex = sections.findIndex(s => s.id === activeSection);
+                      const sectionIndex = sections.findIndex((s) => s.id === activeSection);
                       if (sectionIndex > 0) setActiveSection(sections[sectionIndex - 1].id);
                     }}
                     disabled={activeSection === "basic"}
                   >
                     Previous
                   </Button>
-                  <Button 
+                  <Button
                     type="button"
                     onClick={() => {
-                      const sectionIndex = sections.findIndex(s => s.id === activeSection);
-                      if (sectionIndex < sections.length - 1) setActiveSection(sections[sectionIndex + 1].id);
+                      const sectionIndex = sections.findIndex((s) => s.id === activeSection);
+                      if (sectionIndex < sections.length - 1)
+                        setActiveSection(sections[sectionIndex + 1].id);
                     }}
                     disabled={activeSection === "advanced"}
                   >
                     Next
                   </Button>
-                  <Button 
-                    type="submit" 
-                    loading={loading} 
-                    disabled={!form.code}
+                  <Button
+                    type="submit"
+                    loading={loading}
+                    disabled={!form.code.trim()}
                     className="bg-gradient-to-r from-green-500 to-emerald-500"
                   >
                     <FiSave className="w-4 h-4 mr-2" />

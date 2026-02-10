@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import Table from "@/components/ui/Table";
 import Button from "@/components/ui/Button";
@@ -8,7 +8,6 @@ import Input from "@/components/ui/Input";
 import Card from "@/components/ui/Card";
 import {
   FiDollarSign,
-  FiFilter,
   FiSearch,
   FiDownload,
   FiCheckCircle,
@@ -17,36 +16,93 @@ import {
   FiEye,
   FiRefreshCw
 } from "react-icons/fi";
-import {
-  GiMoneyStack,
-  GiTakeMyMoney
-} from "react-icons/gi";
+import { GiMoneyStack, GiTakeMyMoney } from "react-icons/gi";
 import { toast } from "@/store/uiSlice";
+
+function formatMoney(n) {
+  const v = Number(n || 0);
+  return `₹${v.toLocaleString("en-IN")}`;
+}
+
+function safeDate(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
+
+function formatRequestedCell(value) {
+  const d = safeDate(value);
+  if (!d) return { date: "—", time: "—" };
+  return {
+    date: d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
+    time: d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })
+  };
+}
+
+function statusMeta(status) {
+  switch (status) {
+    case "pending":
+      return {
+        label: "Pending",
+        icon: FiClock,
+        pill: "bg-amber-100 text-amber-800",
+        iconColor: "text-amber-500"
+      };
+    case "completed":
+      return {
+        label: "Completed",
+        icon: FiCheckCircle,
+        pill: "bg-green-100 text-green-800",
+        iconColor: "text-green-500"
+      };
+    case "rejected":
+      return {
+        label: "Rejected",
+        icon: FiXCircle,
+        pill: "bg-red-100 text-red-800",
+        iconColor: "text-red-500"
+      };
+    case "processing":
+      // Backend may return this (schema supports) but process endpoint doesn't set it
+      return {
+        label: "Processing",
+        icon: FiClock,
+        pill: "bg-blue-100 text-blue-800",
+        iconColor: "text-blue-500"
+      };
+    default:
+      return {
+        label: status ? String(status) : "—",
+        icon: FiClock,
+        pill: "bg-slate-100 text-slate-700",
+        iconColor: "text-slate-500"
+      };
+  }
+}
 
 export default function AdminWithdrawalsPage() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [processingId, setProcessingId] = useState(null);
-  const [stats, setStats] = useState({
-    total: 0,
-    pending: 0,
-    completed: 0,
-    rejected: 0,
-    totalAmount: 0
-  });
 
-  async function load() {
+  async function load(nextStatus) {
+    const st = typeof nextStatus === "string" ? nextStatus : statusFilter;
+
     try {
       setLoading(true);
-      const res = await api.adminWithdrawals("");
+
+      const qs = st !== "all" ? `?status=${encodeURIComponent(st)}` : "";
+      const res = await api.adminWithdrawals(qs);
+
       setRows(res.data || []);
-      updateStats(res.data || []);
     } catch (error) {
-      toast({ 
-        title: "Error", 
-        message: "Failed to load withdrawals",
+      toast({
+        title: "Error",
+        message: error?.message || "Failed to load withdrawals",
         type: "error"
       });
     } finally {
@@ -54,214 +110,242 @@ export default function AdminWithdrawalsPage() {
     }
   }
 
-  function updateStats(data) {
-    const stats = {
-      total: data.length,
-      pending: data.filter(w => w.status === "pending").length,
-      completed: data.filter(w => w.status === "completed").length,
-      rejected: data.filter(w => w.status === "rejected").length,
-      totalAmount: data.reduce((sum, w) => sum + w.amount, 0)
-    };
-    setStats(stats);
-  }
-
-  useEffect(() => { 
-    load(); 
+  useEffect(() => {
+    load("all");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // When filter changes, hit backend filter too (faster)
+  useEffect(() => {
+    load(statusFilter);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter]);
+
+  const stats = useMemo(() => {
+    const total = rows.length;
+    const pending = rows.filter((w) => w.status === "pending").length;
+    const completed = rows.filter((w) => w.status === "completed").length;
+    const rejected = rows.filter((w) => w.status === "rejected").length;
+    const processing = rows.filter((w) => w.status === "processing").length;
+    const totalAmount = rows.reduce((sum, w) => sum + Number(w.amount || 0), 0);
+
+    return { total, pending, processing, completed, rejected, totalAmount };
+  }, [rows]);
+
   async function approve(w) {
-    if (!confirm(`Approve withdrawal of ₹${w.amount} to ${w.user?.name}?`)) return;
-    
+    if (!w?.walletId || !w?._id) {
+      toast({ title: "Error", message: "Invalid withdrawal data (missing walletId/_id)", type: "error" });
+      return;
+    }
+
+    if (!confirm(`Approve withdrawal of ${formatMoney(w.amount)} to ${w.user?.name || "User"}?`)) return;
+
     setProcessingId(w._id);
     try {
       const tx = prompt("Enter Transaction ID (required):");
       if (!tx) {
-        toast({ 
-          title: "Error", 
-          message: "Transaction ID is required",
-          type: "error"
-        });
+        toast({ title: "Error", message: "Transaction ID is required", type: "error" });
         return;
       }
-      
-      await api.adminProcessWithdrawal(w.walletId, w._id, { 
-        status: "completed", 
-        transactionId: tx 
+
+      // ✅ Backend expects only completed/rejected
+      await api.adminProcessWithdrawal(w.walletId, w._id, {
+        status: "completed",
+        transactionId: tx
       });
-      
-      await load();
-      toast({ 
-        title: "Success", 
-        message: "Withdrawal approved successfully"
-      });
+
+      await load(statusFilter);
+      toast({ title: "Success", message: "Withdrawal approved successfully", type: "success" });
     } catch (error) {
-      toast({ 
-        title: "Error", 
-        message: error.message || "Failed to approve withdrawal",
-        type: "error"
-      });
+      toast({ title: "Error", message: error?.message || "Failed to approve withdrawal", type: "error" });
     } finally {
       setProcessingId(null);
     }
   }
 
   async function reject(w) {
-    if (!confirm(`Reject withdrawal of ₹${w.amount} from ${w.user?.name}?`)) return;
-    
+    if (!w?.walletId || !w?._id) {
+      toast({ title: "Error", message: "Invalid withdrawal data (missing walletId/_id)", type: "error" });
+      return;
+    }
+
+    if (!confirm(`Reject withdrawal of ${formatMoney(w.amount)} from ${w.user?.name || "User"}?`)) return;
+
     setProcessingId(w._id);
     try {
-      const reason = prompt("Enter rejection reason:");
+      const reason = prompt("Enter rejection reason (required):");
       if (!reason) {
-        toast({ 
-          title: "Error", 
-          message: "Reason is required",
-          type: "error"
-        });
+        toast({ title: "Error", message: "Reason is required", type: "error" });
         return;
       }
-      
-      await api.adminProcessWithdrawal(w.walletId, w._id, { 
-        status: "rejected", 
-        rejectionReason: reason 
+
+      await api.adminProcessWithdrawal(w.walletId, w._id, {
+        status: "rejected",
+        rejectionReason: reason
       });
-      
-      await load();
-      toast({ 
-        title: "Success", 
-        message: "Withdrawal rejected successfully"
-      });
+
+      await load(statusFilter);
+      toast({ title: "Success", message: "Withdrawal rejected successfully", type: "success" });
     } catch (error) {
-      toast({ 
-        title: "Error", 
-        message: error.message || "Failed to reject withdrawal",
-        type: "error"
-      });
+      toast({ title: "Error", message: error?.message || "Failed to reject withdrawal", type: "error" });
     } finally {
       setProcessingId(null);
     }
   }
 
-  // Filter withdrawals based on search and status
-  const filteredRows = rows.filter(row => {
-    const matchesSearch = search === "" || 
-      row.user?.name?.toLowerCase().includes(search.toLowerCase()) ||
-      row.user?.bgmiId?.toLowerCase().includes(search.toLowerCase()) ||
-      row.method?.toLowerCase().includes(search.toLowerCase()) ||
-      row.transactionId?.toLowerCase().includes(search.toLowerCase());
-    
-    const matchesStatus = statusFilter === "all" || row.status === statusFilter;
-    
-    return matchesSearch && matchesStatus;
-  });
+  const filteredRows = useMemo(() => {
+    const s = search.trim().toLowerCase();
+    if (!s) return rows;
+
+    return rows.filter((row) => {
+      const text = [
+        row.user?.name,
+        row.user?.bgmiId,
+        row.user?.email,
+        row.user?.phone,
+        row.method,
+        row.status,
+        row.transactionId,
+        row.rejectionReason
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return text.includes(s);
+    });
+  }, [rows, search]);
+
+  function exportCsv() {
+    const header = [
+      "withdrawalId",
+      "walletId",
+      "userName",
+      "bgmiId",
+      "email",
+      "phone",
+      "amount",
+      "method",
+      "status",
+      "requestedAt",
+      "processedAt",
+      "transactionId",
+      "rejectionReason"
+    ];
+
+    const lines = [header.join(",")].concat(
+      filteredRows.map((r) => {
+        const vals = [
+          r._id ?? "",
+          r.walletId ?? "",
+          r.user?.name ?? "",
+          r.user?.bgmiId ?? "",
+          r.user?.email ?? "",
+          r.user?.phone ?? "",
+          r.amount ?? 0,
+          r.method ?? "",
+          r.status ?? "",
+          r.requestedAt ? new Date(r.requestedAt).toISOString() : "",
+          r.processedAt ? new Date(r.processedAt).toISOString() : "",
+          r.transactionId ?? "",
+          r.rejectionReason ?? ""
+        ];
+        return vals.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(",");
+      })
+    );
+
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `withdrawals_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   const columns = [
-    { 
-      key: "user", 
-      title: "User", 
+    {
+      key: "user",
+      title: "User",
       render: (r) => (
-        <div>
+        <div className="min-w-[180px]">
           <div className="font-medium text-slate-800">{r.user?.name || "N/A"}</div>
           <div className="text-xs text-slate-500">{r.user?.bgmiId || "-"}</div>
         </div>
-      ) 
+      )
     },
-    { 
-      key: "amount", 
-      title: "Amount", 
-      render: (r) => (
-        <div className="font-bold text-slate-800">
-          ₹{r.amount.toLocaleString()}
-        </div>
-      ) 
+    {
+      key: "amount",
+      title: "Amount",
+      render: (r) => <div className="font-bold text-slate-800 whitespace-nowrap">{formatMoney(r.amount)}</div>
     },
-    { 
-      key: "method", 
-      title: "Method", 
+    {
+      key: "method",
+      title: "Method",
       render: (r) => (
         <div className="flex items-center gap-2">
           {r.method === "upi" ? (
-            <span className="px-2 py-1 bg-gradient-to-r from-green-100 to-emerald-100 text-green-800 rounded text-xs font-medium">
+            <span className="px-2 py-1 bg-gradient-to-r from-green-100 to-emerald-100 text-green-800 rounded text-xs font-medium whitespace-nowrap">
               UPI
             </span>
           ) : r.method === "bank" ? (
-            <span className="px-2 py-1 bg-gradient-to-r from-blue-100 to-cyan-100 text-blue-800 rounded text-xs font-medium">
+            <span className="px-2 py-1 bg-gradient-to-r from-blue-100 to-cyan-100 text-blue-800 rounded text-xs font-medium whitespace-nowrap">
               Bank
             </span>
           ) : (
-            <span className="px-2 py-1 bg-slate-100 text-slate-700 rounded text-xs font-medium">
-              {r.method}
+            <span className="px-2 py-1 bg-slate-100 text-slate-700 rounded text-xs font-medium whitespace-nowrap">
+              {r.method || "—"}
             </span>
           )}
         </div>
-      ) 
+      )
     },
-    { 
-      key: "status", 
-      title: "Status", 
-      render: (r) => (
-        <div className="flex items-center gap-2">
-          {r.status === "pending" ? (
-            <>
-              <FiClock className="w-4 h-4 text-amber-500" />
-              <span className="px-2 py-1 bg-amber-100 text-amber-800 rounded text-xs font-medium">
-                Pending
-              </span>
-            </>
-          ) : r.status === "completed" ? (
-            <>
-              <FiCheckCircle className="w-4 h-4 text-green-500" />
-              <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-medium">
-                Completed
-              </span>
-            </>
-          ) : r.status === "rejected" ? (
-            <>
-              <FiXCircle className="w-4 h-4 text-red-500" />
-              <span className="px-2 py-1 bg-red-100 text-red-800 rounded text-xs font-medium">
-                Rejected
-              </span>
-            </>
-          ) : (
-            <span className="px-2 py-1 bg-slate-100 text-slate-700 rounded text-xs font-medium">
-              {r.status}
-            </span>
-          )}
-        </div>
-      ) 
-    },
-    { 
-      key: "requestedAt", 
-      title: "Requested", 
-      render: (r) => (
-        <div>
-          <div className="text-sm text-slate-800">
-            {new Date(r.requestedAt).toLocaleDateString()}
+    {
+      key: "status",
+      title: "Status",
+      render: (r) => {
+        const meta = statusMeta(r.status);
+        const Icon = meta.icon;
+        return (
+          <div className="flex items-center gap-2 whitespace-nowrap">
+            <Icon className={`w-4 h-4 ${meta.iconColor}`} />
+            <span className={`px-2 py-1 rounded text-xs font-medium ${meta.pill}`}>{meta.label}</span>
           </div>
-          <div className="text-xs text-slate-500">
-            {new Date(r.requestedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-          </div>
-        </div>
-      ) 
+        );
+      }
     },
-    { 
-      key: "details", 
-      title: "Details", 
+    {
+      key: "requestedAt",
+      title: "Requested",
+      render: (r) => {
+        const t = formatRequestedCell(r.requestedAt);
+        return (
+          <div className="whitespace-nowrap">
+            <div className="text-sm text-slate-800">{t.date}</div>
+            <div className="text-xs text-slate-500">{t.time}</div>
+          </div>
+        );
+      }
+    },
+    {
+      key: "details",
+      title: "Details",
       render: (r) => (
-        <div className="text-xs text-slate-600 space-y-1">
-          {r.transactionId && (
-            <div>TX: {r.transactionId.substring(0, 8)}...</div>
-          )}
+        <div className="text-xs text-slate-600 space-y-1 min-w-[200px]">
+          {r.transactionId && <div title={r.transactionId}>TX: {String(r.transactionId).slice(0, 16)}...</div>}
           {r.rejectionReason && (
-            <div className="text-red-600">Reason: {r.rejectionReason}</div>
+            <div className="text-red-600 line-clamp-2" title={r.rejectionReason}>
+              Reason: {r.rejectionReason}
+            </div>
           )}
         </div>
-      ) 
+      )
     },
     {
       key: "actions",
       title: "Actions",
       render: (r) => (
-        <div className="flex gap-2">
+        <div className="flex gap-2 whitespace-nowrap">
           {r.status === "pending" ? (
             <>
               <Button
@@ -287,9 +371,20 @@ export default function AdminWithdrawalsPage() {
             </>
           ) : (
             <div className="flex items-center gap-2">
-              <span className="text-sm text-slate-600">Processed</span>
+              <span className="text-sm text-slate-600 capitalize">{r.status || "Processed"}</span>
               <button
-                onClick={() => alert(`Transaction ID: ${r.transactionId || 'N/A'}\nStatus: ${r.status}\nAmount: ₹${r.amount}`)}
+                type="button"
+                onClick={() =>
+                  alert(
+                    `Withdrawal ID: ${r._id}\nWallet ID: ${r.walletId}\nUser: ${r.user?.name || "N/A"}\nBGMI ID: ${
+                      r.user?.bgmiId || "—"
+                    }\nStatus: ${r.status}\nAmount: ${formatMoney(r.amount)}\nMethod: ${r.method}\nRequestedAt: ${
+                      r.requestedAt ? new Date(r.requestedAt).toLocaleString() : "—"
+                    }\nProcessedAt: ${r.processedAt ? new Date(r.processedAt).toLocaleString() : "—"}\nTransaction ID: ${
+                      r.transactionId || "N/A"
+                    }\nReason: ${r.rejectionReason || "N/A"}`
+                  )
+                }
                 className="p-1 hover:bg-slate-100 rounded"
                 title="View Details"
               >
@@ -303,7 +398,7 @@ export default function AdminWithdrawalsPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 overflow-x-hidden">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -311,17 +406,18 @@ export default function AdminWithdrawalsPage() {
           <p className="text-slate-600 mt-1">Manage and process user withdrawal requests</p>
         </div>
         <Button
-          onClick={load}
+          onClick={() => load(statusFilter)}
           variant="outline"
           className="flex items-center gap-2"
+          type="button"
         >
           <FiRefreshCw className="w-4 h-4" />
           Refresh
         </Button>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
         <Card className="p-4">
           <div className="flex items-center justify-between">
             <div>
@@ -342,6 +438,18 @@ export default function AdminWithdrawalsPage() {
             </div>
             <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-amber-100 to-amber-50 flex items-center justify-center">
               <FiClock className="w-6 h-6 text-amber-600" />
+            </div>
+          </div>
+        </Card>
+
+        <Card className="p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm text-slate-600">Processing</div>
+              <div className="text-2xl font-bold text-blue-600">{stats.processing}</div>
+            </div>
+            <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center">
+              <FiClock className="w-6 h-6 text-blue-600" />
             </div>
           </div>
         </Card>
@@ -374,7 +482,7 @@ export default function AdminWithdrawalsPage() {
           <div className="flex items-center justify-between">
             <div>
               <div className="text-sm text-slate-600">Total Amount</div>
-              <div className="text-2xl font-bold text-slate-800">₹{stats.totalAmount.toLocaleString()}</div>
+              <div className="text-2xl font-bold text-slate-800">{formatMoney(stats.totalAmount)}</div>
             </div>
             <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-purple-100 to-purple-50 flex items-center justify-center">
               <GiTakeMyMoney className="w-6 h-6 text-purple-600" />
@@ -386,20 +494,21 @@ export default function AdminWithdrawalsPage() {
       {/* Filters */}
       <Card className="p-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <Input
-              placeholder="Search by name, BGMI ID, method..."
+              placeholder="Search by name, BGMI ID, method, TX, reason..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               icon={<FiSearch className="w-4 h-4" />}
             />
           </div>
-          
+
           <div className="flex flex-wrap gap-2">
             <Button
               variant={statusFilter === "all" ? "primary" : "outline"}
               onClick={() => setStatusFilter("all")}
               size="sm"
+              type="button"
             >
               All
             </Button>
@@ -408,15 +517,27 @@ export default function AdminWithdrawalsPage() {
               onClick={() => setStatusFilter("pending")}
               size="sm"
               className="border-amber-300 text-amber-600 hover:border-amber-400"
+              type="button"
             >
               <FiClock className="w-4 h-4 mr-1" />
-              Pending ({stats.pending})
+              Pending
+            </Button>
+            <Button
+              variant={statusFilter === "processing" ? "primary" : "outline"}
+              onClick={() => setStatusFilter("processing")}
+              size="sm"
+              className="border-blue-300 text-blue-600 hover:border-blue-400"
+              type="button"
+            >
+              <FiClock className="w-4 h-4 mr-1" />
+              Processing
             </Button>
             <Button
               variant={statusFilter === "completed" ? "primary" : "outline"}
               onClick={() => setStatusFilter("completed")}
               size="sm"
               className="border-green-300 text-green-600 hover:border-green-400"
+              type="button"
             >
               <FiCheckCircle className="w-4 h-4 mr-1" />
               Completed
@@ -426,6 +547,7 @@ export default function AdminWithdrawalsPage() {
               onClick={() => setStatusFilter("rejected")}
               size="sm"
               className="border-red-300 text-red-600 hover:border-red-400"
+              type="button"
             >
               <FiXCircle className="w-4 h-4 mr-1" />
               Rejected
@@ -436,31 +558,27 @@ export default function AdminWithdrawalsPage() {
 
       {/* Table */}
       <Card className="p-0 overflow-hidden">
-        <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-          <div>
+        <div className="p-4 border-b border-slate-200 flex items-center justify-between gap-3">
+          <div className="min-w-0">
             <h3 className="font-semibold text-slate-800">Withdrawal Requests</h3>
             <p className="text-sm text-slate-600">
               Showing {filteredRows.length} of {rows.length} requests
             </p>
           </div>
-          <Button
-            variant="outline"
-            className="flex items-center gap-2"
-          >
+
+          <Button variant="outline" className="flex items-center gap-2" type="button" onClick={exportCsv}>
             <FiDownload className="w-4 h-4" />
             Export CSV
           </Button>
         </div>
-        
+
         {loading ? (
           <div className="p-8 text-center">
             <div className="h-8 w-8 rounded-full border-4 border-slate-300 border-t-blue-600 animate-spin mx-auto mb-4"></div>
             <div className="text-slate-700 font-medium">Loading withdrawals...</div>
           </div>
         ) : filteredRows.length > 0 ? (
-          <div className="overflow-x-auto">
-            <Table columns={columns} rows={filteredRows} />
-          </div>
+          <Table columns={columns} rows={filteredRows} />
         ) : (
           <div className="p-8 text-center">
             <div className="h-16 w-16 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center mx-auto mb-4">
@@ -468,49 +586,11 @@ export default function AdminWithdrawalsPage() {
             </div>
             <h3 className="text-lg font-semibold text-slate-700 mb-2">No Withdrawals Found</h3>
             <p className="text-slate-600">
-              {search || statusFilter !== "all" 
-                ? "Try adjusting your search or filters" 
-                : "No withdrawal requests yet"}
+              {search || statusFilter !== "all" ? "Try adjusting your search or filters" : "No withdrawal requests yet"}
             </p>
           </div>
         )}
       </Card>
-
-      {/* Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="p-4">
-          <h4 className="font-semibold text-slate-800 mb-3">Quick Actions</h4>
-          <div className="space-y-2">
-            <div className="text-sm text-slate-600">
-              • Process pending requests within 24 hours
-            </div>
-            <div className="text-sm text-slate-600">
-              • Verify UPI/Bank details before approval
-            </div>
-            <div className="text-sm text-slate-600">
-              • Add transaction ID for completed withdrawals
-            </div>
-          </div>
-        </Card>
-        
-        <Card className="p-4">
-          <h4 className="font-semibold text-slate-800 mb-3">Processing Guidelines</h4>
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-sm">
-              <FiCheckCircle className="w-4 h-4 text-green-500" />
-              <span className="text-slate-600">Approve only after successful transfer</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm">
-              <FiXCircle className="w-4 h-4 text-red-500" />
-              <span className="text-slate-600">Reject if details are invalid</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm">
-              <FiClock className="w-4 h-4 text-amber-500" />
-              <span className="text-slate-600">Keep transaction records for 6 months</span>
-            </div>
-          </div>
-        </Card>
-      </div>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
@@ -25,12 +25,77 @@ import {
 import { MdOutlineDiscount, MdOutlineHistory } from "react-icons/md";
 import { RiCoupon3Line } from "react-icons/ri";
 
+function toDatetimeLocalValueFromISO(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours()
+  )}:${pad(d.getMinutes())}`;
+}
+
+function parseJsonArray(text) {
+  if (!text?.trim()) return [];
+  try {
+    const val = JSON.parse(text);
+    if (Array.isArray(val)) return val;
+    return [];
+  } catch {
+    return null;
+  }
+}
+
+function cleanStringArray(arr) {
+  return (arr || [])
+    .map((x) => (typeof x === "string" ? x.trim() : String(x || "").trim()))
+    .filter(Boolean);
+}
+
+function cleanObjectIdArray(arr) {
+  return cleanStringArray(arr);
+}
+
+function buildUpdatePayload(form, restrictions) {
+  // Only allow updating fields that backend expects
+  return {
+    code: (form.code || "").trim().toUpperCase(),
+    discountType: form.discountType,
+    discountValue: Number(form.discountValue || 0),
+
+    maxUses: form.maxUses === "" ? null : (form.maxUses === null ? null : Number(form.maxUses)),
+    maxUsesPerUser: Number(form.maxUsesPerUser || 1),
+    minOrderAmount: Number(form.minOrderAmount || 0),
+
+    expiresAt: form.expiresAt
+      ? new Date(form.expiresAt).toISOString()
+      : null,
+
+    active: !!form.active,
+
+    applicableTournamentIds: restrictions.applicableTournamentIds,
+    allowedUserIds: restrictions.allowedUserIds,
+    allowedBgmiIds: restrictions.allowedBgmiIds
+  };
+}
+
 export default function EditCouponPage({ params }) {
   const { id } = React.use(params);
+
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+
   const [form, setForm] = useState(null);
-  const [couponStats, setCouponStats] = useState(null);
+
+  // Keep restrictions in textareas
+  const [applicableTournamentIdsText, setApplicableTournamentIdsText] = useState("[]");
+  const [allowedUserIdsText, setAllowedUserIdsText] = useState("[]");
+  const [allowedBgmiIdsText, setAllowedBgmiIdsText] = useState("[]");
+  const [jsonErrors, setJsonErrors] = useState({
+    applicableTournamentIds: null,
+    allowedUserIds: null,
+    allowedBgmiIds: null
+  });
 
   function set(key, value) {
     setForm((p) => ({ ...p, [key]: value }));
@@ -40,18 +105,21 @@ export default function EditCouponPage({ params }) {
     async function loadCoupon() {
       try {
         setLoading(true);
+
+        // Backend doesn't have GET /coupons/:id, so we fetch list and find
         const res = await api.adminCoupons("");
         const coupon = (res.data || []).find((x) => x._id === id);
-        
+
         if (coupon) {
-          setForm(coupon);
-          // Calculate some stats
-          setCouponStats({
-            remainingUses: coupon.maxUses ? coupon.maxUses - (coupon.usedCount || 0) : 'Unlimited',
-            usagePercentage: coupon.maxUses ? Math.round(((coupon.usedCount || 0) / coupon.maxUses) * 100) : 0,
-            isExpired: coupon.expiresAt ? new Date(coupon.expiresAt) < new Date() : false,
-            daysLeft: coupon.expiresAt ? Math.ceil((new Date(coupon.expiresAt) - new Date()) / (1000 * 60 * 60 * 24)) : null
+          setForm({
+            ...coupon,
+            // Make expiresAt editable via datetime-local
+            expiresAt: coupon.expiresAt ? toDatetimeLocalValueFromISO(coupon.expiresAt) : ""
           });
+
+          setApplicableTournamentIdsText(JSON.stringify(coupon.applicableTournamentIds || [], null, 2));
+          setAllowedUserIdsText(JSON.stringify(coupon.allowedUserIds || [], null, 2));
+          setAllowedBgmiIdsText(JSON.stringify(coupon.allowedBgmiIds || [], null, 2));
         }
       } catch (error) {
         console.error("Failed to load coupon:", error);
@@ -63,20 +131,61 @@ export default function EditCouponPage({ params }) {
     loadCoupon();
   }, [id]);
 
+  const couponStats = useMemo(() => {
+    if (!form) return null;
+
+    const maxUses = form.maxUses;
+    const usedCount = form.usedCount || 0;
+
+    const remainingUses =
+      typeof maxUses === "number" ? Math.max(0, maxUses - usedCount) : "Unlimited";
+
+    const usagePercentage =
+      typeof maxUses === "number" && maxUses > 0 ? Math.round((usedCount / maxUses) * 100) : 0;
+
+    const isExpired = form.expiresAt ? new Date(form.expiresAt) < new Date() : false;
+
+    const daysLeft = form.expiresAt
+      ? Math.ceil((new Date(form.expiresAt) - new Date()) / (1000 * 60 * 60 * 24))
+      : null;
+
+    return { remainingUses, usagePercentage, isExpired, daysLeft };
+  }, [form]);
+
+  function validateRestrictionJson() {
+    const a = parseJsonArray(applicableTournamentIdsText);
+    const u = parseJsonArray(allowedUserIdsText);
+    const b = parseJsonArray(allowedBgmiIdsText);
+
+    const errs = {
+      applicableTournamentIds: a === null ? "Invalid JSON (must be an array)" : null,
+      allowedUserIds: u === null ? "Invalid JSON (must be an array)" : null,
+      allowedBgmiIds: b === null ? "Invalid JSON (must be an array)" : null
+    };
+
+    setJsonErrors(errs);
+
+    const ok = !errs.applicableTournamentIds && !errs.allowedUserIds && !errs.allowedBgmiIds;
+    return { ok, parsed: { a, u, b } };
+  }
+
   async function save(e) {
     e.preventDefault();
     if (!form) return;
-    
+
+    const { ok, parsed } = validateRestrictionJson();
+    if (!ok) return;
+
     setSaving(true);
     try {
-      const payload = {
-        ...form,
-        discountValue: Number(form.discountValue || 0),
-        maxUses: form.maxUses === "" ? null : (form.maxUses === null ? null : Number(form.maxUses)),
-        maxUsesPerUser: Number(form.maxUsesPerUser || 1),
-        minOrderAmount: Number(form.minOrderAmount || 0)
+      const restrictions = {
+        applicableTournamentIds: cleanObjectIdArray(parsed.a),
+        allowedUserIds: cleanObjectIdArray(parsed.u),
+        allowedBgmiIds: cleanStringArray(parsed.b)
       };
-      
+
+      const payload = buildUpdatePayload(form, restrictions);
+
       await api.adminUpdateCoupon(id, payload);
       alert("✅ Coupon updated successfully!");
       window.location.href = "/admin/coupons";
@@ -87,24 +196,22 @@ export default function EditCouponPage({ params }) {
     }
   }
 
-  // Format discount display
   const getDiscountDisplay = () => {
     if (!form) return "";
     if (form.discountType === "free") return "100% OFF (FREE)";
-    if (form.discountType === "percent") return `${form.discountValue}% OFF`;
-    return `₹${form.discountValue} OFF`;
+    if (form.discountType === "percent") return `${Number(form.discountValue || 0)}% OFF`;
+    return `₹${Number(form.discountValue || 0)} OFF`;
   };
 
-  // Calculate expiry status
   const getExpiryStatus = () => {
     if (!form?.expiresAt) return "No expiry";
     const expiryDate = new Date(form.expiresAt);
     const now = new Date();
     if (expiryDate < now) return "Expired";
-    
+
     const diffTime = Math.abs(expiryDate - now);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
+
     if (diffDays === 1) return "Expires tomorrow";
     return `Expires in ${diffDays} days`;
   };
@@ -143,7 +250,7 @@ export default function EditCouponPage({ params }) {
             <p className="text-slate-600 mt-1">Update coupon details and settings</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => window.history.back()}>
+            <Button variant="outline" type="button" onClick={() => window.history.back()}>
               <FiX className="w-4 h-4 mr-2" />
               Cancel
             </Button>
@@ -156,9 +263,9 @@ export default function EditCouponPage({ params }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column - Coupon Info & Stats */}
+        {/* Left */}
         <div className="lg:col-span-1 space-y-6">
-          {/* Coupon Preview Card */}
+          {/* Preview */}
           <Card className="p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-green-100 to-emerald-100 flex items-center justify-center">
@@ -173,7 +280,9 @@ export default function EditCouponPage({ params }) {
             <div className="text-center p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-200 mb-4">
               <div className="text-2xl font-bold text-green-600 mb-1">{getDiscountDisplay()}</div>
               <div className="text-sm text-green-700">
-                {form.minOrderAmount > 0 ? `Min. order: ₹${form.minOrderAmount}` : "No minimum order"}
+                {Number(form.minOrderAmount || 0) > 0
+                  ? `Min. order: ₹${Number(form.minOrderAmount)}`
+                  : "No minimum order"}
               </div>
             </div>
 
@@ -183,11 +292,11 @@ export default function EditCouponPage({ params }) {
                   <FiActivity className="w-4 h-4 text-slate-600" />
                   <span className="text-sm text-slate-700">Status</span>
                 </div>
-                <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                  form.active 
-                    ? 'bg-green-100 text-green-800' 
-                    : 'bg-red-100 text-red-800'
-                }`}>
+                <span
+                  className={`px-3 py-1 rounded-full text-xs font-bold ${
+                    form.active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                  }`}
+                >
                   {form.active ? "Active" : "Inactive"}
                 </span>
               </div>
@@ -197,28 +306,30 @@ export default function EditCouponPage({ params }) {
                   <FiClock className="w-4 h-4 text-slate-600" />
                   <span className="text-sm text-slate-700">Expiry</span>
                 </div>
-                <span className={`text-xs font-medium ${
-                  couponStats?.isExpired ? 'text-red-600' : 'text-green-600'
-                }`}>
+                <span
+                  className={`text-xs font-medium ${
+                    couponStats?.isExpired ? "text-red-600" : "text-green-600"
+                  }`}
+                >
                   {getExpiryStatus()}
                 </span>
               </div>
 
               {form.expiresAt && (
                 <div className="text-xs text-center text-slate-500">
-                  {new Date(form.expiresAt).toLocaleDateString('en-IN', {
-                    day: 'numeric',
-                    month: 'short',
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
+                  {new Date(form.expiresAt).toLocaleDateString("en-IN", {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit"
                   })}
                 </div>
               )}
             </div>
           </Card>
 
-          {/* Usage Statistics Card */}
+          {/* Usage */}
           <Card className="p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center">
@@ -237,26 +348,22 @@ export default function EditCouponPage({ params }) {
                   <span className="font-bold text-slate-800">{form.usedCount || 0}</span>
                 </div>
                 <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
-                  <div 
+                  <div
                     className="h-full bg-gradient-to-r from-blue-500 to-cyan-500"
-                    style={{ 
-                      width: `${couponStats?.usagePercentage || 0}%` 
-                    }}
-                  ></div>
+                    style={{ width: `${couponStats?.usagePercentage || 0}%` }}
+                  />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3 bg-gradient-to-br from-green-50 to-green-100 rounded-lg">
                   <div className="text-sm text-slate-600 mb-1">Max Uses</div>
-                  <div className="text-lg font-bold text-slate-800">
-                    {form.maxUses || "∞"}
-                  </div>
+                  <div className="text-lg font-bold text-slate-800">{form.maxUses ?? "∞"}</div>
                 </div>
                 <div className="p-3 bg-gradient-to-br from-amber-50 to-amber-100 rounded-lg">
                   <div className="text-sm text-slate-600 mb-1">Remaining</div>
                   <div className="text-lg font-bold text-slate-800">
-                    {couponStats?.remainingUses || "∞"}
+                    {couponStats?.remainingUses ?? "∞"}
                   </div>
                 </div>
               </div>
@@ -273,27 +380,28 @@ export default function EditCouponPage({ params }) {
             </div>
           </Card>
 
-          {/* Quick Actions */}
+          {/* Quick actions (UI only) */}
           <Card className="p-6">
             <h3 className="font-bold text-slate-800 mb-4">Quick Actions</h3>
             <div className="space-y-2">
-              <Button variant="outline" className="w-full justify-start">
+              <Button variant="outline" className="w-full justify-start" type="button">
                 <FiEye className="w-4 h-4 mr-2" />
                 View Usage History
               </Button>
-              <Button variant="outline" className="w-full justify-start">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                type="button"
+                onClick={() => window.location.reload()}
+              >
                 <FiRefreshCw className="w-4 h-4 mr-2" />
-                Reset Used Count
-              </Button>
-              <Button variant="outline" className="w-full justify-start text-red-600 hover:text-red-700">
-                <FiX className="w-4 h-4 mr-2" />
-                Deactivate Coupon
+                Reload Coupon
               </Button>
             </div>
           </Card>
         </div>
 
-        {/* Right Column - Edit Form */}
+        {/* Right */}
         <div className="lg:col-span-2">
           <Card className="p-6">
             <div className="flex items-center gap-3 mb-6">
@@ -307,10 +415,12 @@ export default function EditCouponPage({ params }) {
             </div>
 
             <form onSubmit={save} className="space-y-6">
-              {/* Basic Information */}
+              {/* Basic */}
               <div className="space-y-4">
-                <h4 className="font-semibold text-slate-800 border-b border-slate-200 pb-2">Basic Information</h4>
-                
+                <h4 className="font-semibold text-slate-800 border-b border-slate-200 pb-2">
+                  Basic Information
+                </h4>
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <Input
                     label="Coupon Code"
@@ -320,12 +430,12 @@ export default function EditCouponPage({ params }) {
                     icon={<FiTag className="w-4 h-4" />}
                     helperText="Unique identifier for the coupon"
                   />
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1.5">
                       Discount Type
                     </label>
-                    <select 
+                    <select
                       className="input"
                       value={form.discountType}
                       onChange={(e) => set("discountType", e.target.value)}
@@ -335,16 +445,22 @@ export default function EditCouponPage({ params }) {
                       <option value="free">Free (100% Off)</option>
                     </select>
                   </div>
-                  
+
                   <Input
                     label="Discount Value"
-                    value={form.discountValue}
+                    value={form.discountValue ?? 0}
                     onChange={(e) => set("discountValue", e.target.value)}
                     disabled={form.discountType === "free"}
                     type="number"
                     min="0"
                     max={form.discountType === "percent" ? "100" : undefined}
-                    icon={form.discountType === "percent" ? <FiPercent className="w-4 h-4" /> : <FiDollarSign className="w-4 h-4" />}
+                    icon={
+                      form.discountType === "percent" ? (
+                        <FiPercent className="w-4 h-4" />
+                      ) : (
+                        <FiDollarSign className="w-4 h-4" />
+                      )
+                    }
                     helperText={form.discountType === "percent" ? "Percentage (0-100)" : "Flat amount in ₹"}
                   />
                 </div>
@@ -352,17 +468,17 @@ export default function EditCouponPage({ params }) {
                 <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl">
                   <div className="flex items-center gap-2">
                     <FiInfo className="w-4 h-4 text-blue-600" />
-                    <div className="text-sm text-blue-700">
-                      Current discount: {getDiscountDisplay()}
-                    </div>
+                    <div className="text-sm text-blue-700">Current discount: {getDiscountDisplay()}</div>
                   </div>
                 </div>
               </div>
 
-              {/* Usage Limits */}
+              {/* Limits */}
               <div className="space-y-4">
-                <h4 className="font-semibold text-slate-800 border-b border-slate-200 pb-2">Usage Limits</h4>
-                
+                <h4 className="font-semibold text-slate-800 border-b border-slate-200 pb-2">
+                  Usage Limits
+                </h4>
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <Input
                     label="Maximum Uses"
@@ -374,25 +490,25 @@ export default function EditCouponPage({ params }) {
                     icon={<FiUsers className="w-4 h-4" />}
                     helperText="Total number of allowed uses"
                   />
-                  
+
                   <Input
                     label="Uses Per User"
-                    value={form.maxUsesPerUser}
+                    value={form.maxUsesPerUser ?? 1}
                     onChange={(e) => set("maxUsesPerUser", e.target.value)}
                     type="number"
                     min="1"
                     icon={<FiUsers className="w-4 h-4" />}
                     helperText="Maximum uses per user"
                   />
-                  
+
                   <Input
                     label="Minimum Order Amount (₹)"
-                    value={form.minOrderAmount}
+                    value={form.minOrderAmount ?? 0}
                     onChange={(e) => set("minOrderAmount", e.target.value)}
                     type="number"
                     min="0"
                     icon={<FiDollarSign className="w-4 h-4" />}
-                    helperText="Minimum purchase required"
+                    helperText="Minimum tournament fee required"
                   />
                 </div>
 
@@ -404,14 +520,12 @@ export default function EditCouponPage({ params }) {
                     <input
                       type="datetime-local"
                       className="input"
-                      value={form.expiresAt ? new Date(form.expiresAt).toISOString().slice(0, 16) : ""}
+                      value={form.expiresAt || ""}
                       onChange={(e) => set("expiresAt", e.target.value)}
                     />
-                    <div className="text-xs text-slate-500 mt-1">
-                      Leave empty for no expiry
-                    </div>
+                    <div className="text-xs text-slate-500 mt-1">Leave empty for no expiry</div>
                   </div>
-                  
+
                   <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-lg">
                     <div className="flex items-center gap-2">
                       <input
@@ -435,10 +549,67 @@ export default function EditCouponPage({ params }) {
                 </div>
               </div>
 
-              {/* Additional Information */}
+              {/* Restrictions */}
               <div className="space-y-4">
-                <h4 className="font-semibold text-slate-800 border-b border-slate-200 pb-2">Additional Information</h4>
-                
+                <h4 className="font-semibold text-slate-800 border-b border-slate-200 pb-2">
+                  Restrictions (Optional)
+                </h4>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                    Applicable Tournament IDs (JSON array)
+                  </label>
+                  <textarea
+                    className="input font-mono text-sm"
+                    rows={4}
+                    value={applicableTournamentIdsText}
+                    onChange={(e) => setApplicableTournamentIdsText(e.target.value)}
+                    placeholder='["tournament_id_1", "tournament_id_2"]'
+                  />
+                  {jsonErrors.applicableTournamentIds && (
+                    <div className="text-xs text-red-600 mt-1">{jsonErrors.applicableTournamentIds}</div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                    Allowed User IDs (JSON array)
+                  </label>
+                  <textarea
+                    className="input font-mono text-sm"
+                    rows={4}
+                    value={allowedUserIdsText}
+                    onChange={(e) => setAllowedUserIdsText(e.target.value)}
+                    placeholder='["user_id_1", "user_id_2"]'
+                  />
+                  {jsonErrors.allowedUserIds && (
+                    <div className="text-xs text-red-600 mt-1">{jsonErrors.allowedUserIds}</div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                    Allowed BGMI IDs (JSON array)
+                  </label>
+                  <textarea
+                    className="input font-mono text-sm"
+                    rows={4}
+                    value={allowedBgmiIdsText}
+                    onChange={(e) => setAllowedBgmiIdsText(e.target.value)}
+                    placeholder='["1234567890", "0987654321"]'
+                  />
+                  {jsonErrors.allowedBgmiIds && (
+                    <div className="text-xs text-red-600 mt-1">{jsonErrors.allowedBgmiIds}</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Readonly info */}
+              <div className="space-y-4">
+                <h4 className="font-semibold text-slate-800 border-b border-slate-200 pb-2">
+                  Additional Information
+                </h4>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1.5">
@@ -451,7 +622,7 @@ export default function EditCouponPage({ params }) {
                       disabled
                     />
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1.5">
                       Last Updated
@@ -471,42 +642,31 @@ export default function EditCouponPage({ params }) {
                     <div className="text-sm">
                       <div className="font-medium text-amber-800">Usage Summary</div>
                       <div className="text-amber-700 mt-1">
-                        This coupon has been used {form.usedCount || 0} times. 
-                        {form.maxUses ? ` ${couponStats?.remainingUses} uses remaining.` : " Unlimited uses available."}
-                        {couponStats?.daysLeft && couponStats.daysLeft > 0 && ` Expires in ${couponStats.daysLeft} days.`}
+                        This coupon has been used {form.usedCount || 0} times.
+                        {typeof form.maxUses === "number"
+                          ? ` ${couponStats?.remainingUses} uses remaining.`
+                          : " Unlimited uses available."}
+                        {couponStats?.daysLeft && couponStats.daysLeft > 0
+                          ? ` Expires in ${couponStats.daysLeft} days.`
+                          : ""}
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Form Actions */}
+              {/* Actions */}
               <div className="pt-6 border-t border-slate-200">
                 <div className="flex items-center justify-between">
-                  <Button 
-                    type="button" 
-                    variant="outline"
-                    onClick={() => window.history.back()}
-                  >
+                  <Button type="button" variant="outline" onClick={() => window.history.back()}>
                     <FiX className="w-4 h-4 mr-2" />
                     Cancel
                   </Button>
                   <div className="flex gap-3">
-                    <Button 
-                      type="button" 
-                      variant="outline"
-                      onClick={() => {
-                        // Reset form to original values
-                        window.location.reload();
-                      }}
-                    >
+                    <Button type="button" variant="outline" onClick={() => window.location.reload()}>
                       Reset
                     </Button>
-                    <Button 
-                      type="submit" 
-                      loading={saving}
-                      className="bg-gradient-to-r from-green-500 to-emerald-500"
-                    >
+                    <Button type="submit" loading={saving} className="bg-gradient-to-r from-green-500 to-emerald-500">
                       <FiSave className="w-4 h-4 mr-2" />
                       {saving ? "Saving..." : "Save Changes"}
                     </Button>

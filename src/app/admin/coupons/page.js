@@ -1,15 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import Table from "@/components/ui/Table";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Input from "@/components/ui/Input";
-import { 
-  FiPlus, 
-  FiSearch, 
-  FiFilter,
+import {
+  FiPlus,
+  FiSearch,
   FiEdit,
   FiTrash2,
   FiCopy,
@@ -23,18 +21,44 @@ import {
   FiXCircle
 } from "react-icons/fi";
 import { RiCoupon3Line } from "react-icons/ri";
-import { MdOutlineLocalOffer } from "react-icons/md";
 import { toast } from "@/store/uiSlice";
+
+function formatMoney(n) {
+  if (typeof n !== "number") return "₹0";
+  return `₹${n}`;
+}
+
+function formatDate(d) {
+  if (!d) return "—";
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return "—";
+  return dt.toLocaleString();
+}
+
+function couponValidity(c) {
+  // Backend has expiresAt only (no validFrom)
+  if (!c.expiresAt) return { label: "No Expiry", color: "text-slate-600" };
+
+  const now = new Date();
+  const exp = new Date(c.expiresAt);
+  if (Number.isNaN(exp.getTime())) return { label: "—", color: "text-slate-600" };
+
+  if (now > exp) return { label: "Expired", color: "text-red-600" };
+  return { label: "Valid", color: "text-green-600" };
+}
 
 export default function AdminCouponsPage() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState("all"); // all | active | inactive | used | expired
+  const [typeFilter, setTypeFilter] = useState("all"); // all | percent | flat | free
 
   async function load() {
     setLoading(true);
     try {
+      // backend supports q and active; we can load all and filter client-side
       const res = await api.adminCoupons("");
       setRows(res.data || []);
     } catch (error) {
@@ -48,13 +72,13 @@ export default function AdminCouponsPage() {
     }
   }
 
-  useEffect(() => { 
-    load(); 
+  useEffect(() => {
+    load();
   }, []);
 
   async function deleteCoupon(id) {
     if (!confirm("Are you sure you want to delete this coupon? This action cannot be undone.")) return;
-    
+
     try {
       await api.adminDeleteCoupon(id);
       await load();
@@ -81,31 +105,51 @@ export default function AdminCouponsPage() {
     });
   }
 
-  const filteredRows = rows.filter(coupon => {
-    // Search filter
-    const matchesSearch = coupon.code.toLowerCase().includes(search.toLowerCase()) ||
-                         coupon.description?.toLowerCase().includes(search.toLowerCase());
-    
-    // Status filter
-    const matchesFilter = filter === "all" ? true : 
-                         filter === "active" ? coupon.active : 
-                         filter === "inactive" ? !coupon.active : 
-                         filter === "used" ? coupon.usedCount > 0 : true;
-    
-    return matchesSearch && matchesFilter;
-  });
+  const filteredRows = useMemo(() => {
+    const s = search.trim().toLowerCase();
 
-  const stats = {
-    total: rows.length,
-    active: rows.filter(c => c.active).length,
-    used: rows.filter(c => c.usedCount > 0).length,
-    percentage: rows.filter(c => c.discountType === "percentage").length
-  };
+    return rows.filter((c) => {
+      // search (backend only has code; no description in schema)
+      const matchesSearch = !s ? true : (c.code || "").toLowerCase().includes(s);
+
+      // type filter
+      const matchesType = typeFilter === "all" ? true : c.discountType === typeFilter;
+
+      // status filter
+      const validity = couponValidity(c);
+      const isExpired = validity.label === "Expired";
+
+      const matchesStatus =
+        filter === "all" ? true :
+        filter === "active" ? !!c.active :
+        filter === "inactive" ? !c.active :
+        filter === "used" ? (c.usedCount || 0) > 0 :
+        filter === "expired" ? isExpired :
+        true;
+
+      return matchesSearch && matchesType && matchesStatus;
+    });
+  }, [rows, search, filter, typeFilter]);
+
+  const stats = useMemo(() => {
+    const now = new Date();
+    const expired = rows.filter((c) => c.expiresAt && new Date(c.expiresAt) < now).length;
+
+    return {
+      total: rows.length,
+      active: rows.filter((c) => c.active).length,
+      used: rows.filter((c) => (c.usedCount || 0) > 0).length,
+      expired,
+      percent: rows.filter((c) => c.discountType === "percent").length,
+      flat: rows.filter((c) => c.discountType === "flat").length,
+      free: rows.filter((c) => c.discountType === "free").length
+    };
+  }, [rows]);
 
   const columns = [
-    { 
-      key: "code", 
-      title: "Code", 
+    {
+      key: "code",
+      title: "Code",
       render: (r) => (
         <div className="flex items-center gap-2">
           <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center">
@@ -113,44 +157,53 @@ export default function AdminCouponsPage() {
           </div>
           <div>
             <div className="font-semibold text-slate-800">{r.code}</div>
-            {r.description && (
-              <div className="text-xs text-slate-500 truncate max-w-[200px]">{r.description}</div>
-            )}
+            <div className="text-xs text-slate-500">
+              Min: {formatMoney(r.minOrderAmount || 0)} • MaxUses: {r.maxUses === null ? "∞" : (r.maxUses ?? "—")}
+            </div>
           </div>
         </div>
       )
     },
-    { 
-      key: "discountType", 
-      title: "Type", 
+    {
+      key: "discountType",
+      title: "Type",
       render: (r) => (
         <div className="flex items-center gap-2">
-          {r.discountType === "percentage" ? (
+          {r.discountType === "percent" ? (
             <>
               <FiPercent className="w-4 h-4 text-green-600" />
-              <span className="text-green-700 font-medium">Percentage</span>
+              <span className="text-green-700 font-medium">Percent</span>
+            </>
+          ) : r.discountType === "flat" ? (
+            <>
+              <FiDollarSign className="w-4 h-4 text-blue-600" />
+              <span className="text-blue-700 font-medium">Flat</span>
             </>
           ) : (
             <>
-              <FiDollarSign className="w-4 h-4 text-blue-600" />
-              <span className="text-blue-700 font-medium">Fixed</span>
+              <FiTag className="w-4 h-4 text-purple-600" />
+              <span className="text-purple-700 font-medium">Free</span>
             </>
           )}
         </div>
       )
     },
-    { 
-      key: "discountValue", 
-      title: "Value", 
+    {
+      key: "discountValue",
+      title: "Value",
       render: (r) => (
         <div className="font-bold">
-          {r.discountType === "percentage" ? `${r.discountValue}%` : `₹${r.discountValue}`}
+          {r.discountType === "percent"
+            ? `${r.discountValue || 0}%`
+            : r.discountType === "flat"
+              ? formatMoney(r.discountValue || 0)
+              : formatMoney(0)}
         </div>
       )
     },
-    { 
-      key: "status", 
-      title: "Status", 
+    {
+      key: "status",
+      title: "Status",
       render: (r) => (
         <div className="flex items-center gap-2">
           {r.active ? (
@@ -167,38 +220,26 @@ export default function AdminCouponsPage() {
         </div>
       )
     },
-    { 
-      key: "usage", 
-      title: "Usage", 
+    {
+      key: "usage",
+      title: "Usage",
       render: (r) => (
         <div className="text-center">
           <div className="font-bold text-slate-800">{r.usedCount || 0}</div>
-          <div className="text-xs text-slate-500">/{r.maxUses || "∞"}</div>
+          <div className="text-xs text-slate-500">/{r.maxUses === null ? "∞" : (r.maxUses ?? "—")}</div>
+          <div className="text-[11px] text-slate-500 mt-1">PerUser: {r.maxUsesPerUser ?? 1}</div>
         </div>
       )
     },
-    { 
-      key: "validity", 
-      title: "Validity", 
+    {
+      key: "expiresAt",
+      title: "Validity",
       render: (r) => {
-        const now = new Date();
-        const validFrom = new Date(r.validFrom);
-        const validUntil = r.validUntil ? new Date(r.validUntil) : null;
-        
-        let status = "Valid";
-        let color = "text-green-600";
-        
-        if (validUntil && now > validUntil) {
-          status = "Expired";
-          color = "text-red-600";
-        } else if (now < validFrom) {
-          status = "Upcoming";
-          color = "text-amber-600";
-        }
-        
+        const v = couponValidity(r);
         return (
-          <div className={`text-sm font-medium ${color}`}>
-            {status}
+          <div>
+            <div className={`text-sm font-medium ${v.color}`}>{v.label}</div>
+            <div className="text-xs text-slate-500">Exp: {formatDate(r.expiresAt)}</div>
           </div>
         );
       }
@@ -217,20 +258,23 @@ export default function AdminCouponsPage() {
           >
             <FiCopy className="w-4 h-4" />
           </Button>
-          <a 
+
+          <a
             href={`/admin/coupons/${r._id}`}
             className="h-8 w-8 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-colors"
-            title="View Details"
+            title="View"
           >
             <FiEye className="w-4 h-4 text-slate-600" />
           </a>
-          <a 
+
+          <a
             href={`/admin/coupons/${r._id}/edit`}
             className="h-8 w-8 rounded-lg hover:bg-blue-100 flex items-center justify-center transition-colors"
             title="Edit"
           >
             <FiEdit className="w-4 h-4 text-blue-600" />
           </a>
+
           <Button
             variant="ghost"
             size="sm"
@@ -251,7 +295,7 @@ export default function AdminCouponsPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Coupon Management</h1>
-          <p className="text-slate-600 mt-1">Create and manage discount coupons for tournaments</p>
+          <p className="text-slate-600 mt-1">BGMI tournaments ke liye discount coupons manage karo</p>
         </div>
         <div className="flex items-center gap-3">
           <Button
@@ -264,7 +308,7 @@ export default function AdminCouponsPage() {
             Refresh
           </Button>
           <Button
-            onClick={() => window.location.href = "/admin/coupons/new"}
+            onClick={() => (window.location.href = "/admin/coupons/new")}
             className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 flex items-center gap-2"
           >
             <FiPlus className="w-4 h-4" />
@@ -278,7 +322,7 @@ export default function AdminCouponsPage() {
         <Card className="p-4">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm text-slate-600">Total Coupons</div>
+              <div className="text-sm text-slate-600">Total</div>
               <div className="text-2xl font-bold text-slate-800 mt-1">{stats.total}</div>
             </div>
             <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center">
@@ -306,7 +350,7 @@ export default function AdminCouponsPage() {
               <div className="text-2xl font-bold text-slate-800 mt-1">{stats.used}</div>
             </div>
             <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-amber-100 to-amber-50 flex items-center justify-center">
-              <MdOutlineLocalOffer className="w-6 h-6 text-amber-600" />
+              <FiTag className="w-6 h-6 text-amber-600" />
             </div>
           </div>
         </Card>
@@ -314,11 +358,11 @@ export default function AdminCouponsPage() {
         <Card className="p-4">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm text-slate-600">Percentage Type</div>
-              <div className="text-2xl font-bold text-slate-800 mt-1">{stats.percentage}</div>
+              <div className="text-sm text-slate-600">Expired</div>
+              <div className="text-2xl font-bold text-slate-800 mt-1">{stats.expired}</div>
             </div>
-            <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-purple-100 to-purple-50 flex items-center justify-center">
-              <FiPercent className="w-6 h-6 text-purple-600" />
+            <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-red-100 to-red-50 flex items-center justify-center">
+              <FiXCircle className="w-6 h-6 text-red-600" />
             </div>
           </div>
         </Card>
@@ -329,45 +373,81 @@ export default function AdminCouponsPage() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex-1 max-w-md">
             <Input
-              placeholder="Search coupons by code or description..."
+              placeholder="Search by coupon code..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               icon={<FiSearch className="w-4 h-4" />}
             />
           </div>
-          
-          <div className="flex items-center gap-3">
-            <div className="text-sm text-slate-700 font-medium">Filter:</div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="text-sm text-slate-700 font-medium">Status:</div>
             <div className="flex flex-wrap gap-2">
-              {["all", "active", "inactive", "used"].map((filterType) => (
+              {["all", "active", "inactive", "used", "expired"].map((t) => (
                 <button
-                  key={filterType}
-                  onClick={() => setFilter(filterType)}
+                  key={t}
+                  onClick={() => setFilter(t)}
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                    filter === filterType
+                    filter === t
                       ? "bg-gradient-to-r from-slate-800 to-slate-900 text-white"
                       : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                   }`}
                 >
-                  {filterType.charAt(0).toUpperCase() + filterType.slice(1)}
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
                 </button>
               ))}
             </div>
-            
+
+            <div className="text-sm text-slate-700 font-medium ml-0 md:ml-2">Type:</div>
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="px-3 py-2 rounded-lg bg-slate-100 text-slate-800 text-sm"
+            >
+              <option value="all">All</option>
+              <option value="percent">Percent</option>
+              <option value="flat">Flat</option>
+              <option value="free">Free</option>
+            </select>
+
             <Button
               variant="outline"
               className="flex items-center gap-2"
               onClick={() => {
-                // Export functionality
+                // simple CSV export (client-side)
+                const header = ["code","discountType","discountValue","active","usedCount","maxUses","maxUsesPerUser","minOrderAmount","expiresAt","createdAt"];
+                const lines = [header.join(",")].concat(
+                  filteredRows.map((c) => ([
+                    c.code,
+                    c.discountType,
+                    c.discountValue,
+                    c.active,
+                    c.usedCount || 0,
+                    c.maxUses === null ? "" : (c.maxUses ?? ""),
+                    c.maxUsesPerUser ?? "",
+                    c.minOrderAmount ?? "",
+                    c.expiresAt ? new Date(c.expiresAt).toISOString() : "",
+                    c.createdAt ? new Date(c.createdAt).toISOString() : ""
+                  ].map((v) => `"${String(v ?? "").replaceAll('"', '""')}"`).join(",")))
+                );
+
+                const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `coupons_${new Date().toISOString().slice(0,10)}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+
                 toast({
-                  title: "Export Started",
-                  message: "Preparing coupon data for export...",
-                  type: "info"
+                  title: "Export Ready",
+                  message: "CSV downloaded",
+                  type: "success"
                 });
               }}
             >
               <FiDownload className="w-4 h-4" />
-              Export
+              Export CSV
             </Button>
           </div>
         </div>
@@ -381,7 +461,7 @@ export default function AdminCouponsPage() {
             Showing {filteredRows.length} of {rows.length} coupons
           </p>
         </div>
-        
+
         {loading ? (
           <div className="p-12 text-center">
             <div className="h-12 w-12 rounded-full border-4 border-slate-300 border-t-blue-600 animate-spin mx-auto mb-4"></div>
@@ -392,9 +472,12 @@ export default function AdminCouponsPage() {
             <table className="w-full">
               <thead className="bg-slate-50">
                 <tr>
-                  {columns.map((column) => (
-                    <th key={column.key} className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                      {column.title}
+                  {columns.map((c) => (
+                    <th
+                      key={c.key}
+                      className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider"
+                    >
+                      {c.title}
                     </th>
                   ))}
                 </tr>
@@ -402,9 +485,9 @@ export default function AdminCouponsPage() {
               <tbody className="divide-y divide-slate-200">
                 {filteredRows.map((row) => (
                   <tr key={row._id} className="hover:bg-slate-50 transition-colors">
-                    {columns.map((column) => (
-                      <td key={column.key} className="px-6 py-4 whitespace-nowrap">
-                        {column.render ? column.render(row) : row[column.key]}
+                    {columns.map((c) => (
+                      <td key={c.key} className="px-6 py-4 whitespace-nowrap">
+                        {c.render ? c.render(row) : row[c.key]}
                       </td>
                     ))}
                   </tr>
@@ -419,10 +502,12 @@ export default function AdminCouponsPage() {
             </div>
             <h3 className="text-lg font-semibold text-slate-700">No coupons found</h3>
             <p className="text-slate-600 mt-2">
-              {search || filter !== "all" ? "Try changing your search or filter" : "Create your first coupon to get started"}
+              {search || filter !== "all" || typeFilter !== "all"
+                ? "Try changing your search / filters"
+                : "Create your first coupon to get started"}
             </p>
             <Button
-              onClick={() => window.location.href = "/admin/coupons/new"}
+              onClick={() => (window.location.href = "/admin/coupons/new")}
               className="mt-4 flex items-center gap-2"
             >
               <FiPlus className="w-4 h-4" />
@@ -430,24 +515,6 @@ export default function AdminCouponsPage() {
             </Button>
           </div>
         )}
-      </Card>
-
-      {/* Info Card */}
-      <Card className="p-6 bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200">
-        <div className="flex items-start gap-4">
-          <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-100 to-cyan-100 flex items-center justify-center">
-            <RiCoupon3Line className="w-6 h-6 text-blue-600" />
-          </div>
-          <div>
-            <h4 className="font-semibold text-slate-800">Coupon Tips</h4>
-            <ul className="mt-2 space-y-1 text-sm text-slate-700">
-              <li>• Use percentage discounts for tournaments with varying entry fees</li>
-              <li>• Set maximum uses to control how many times a coupon can be applied</li>
-              <li>• Set validity dates to create time-limited promotions</li>
-              <li>• Deactivate coupons instead of deleting to preserve history</li>
-            </ul>
-          </div>
-        </div>
       </Card>
     </div>
   );

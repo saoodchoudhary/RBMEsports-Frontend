@@ -1,4 +1,3 @@
-// app/admin/layout.js
 "use client";
 
 import { useEffect } from "react";
@@ -6,7 +5,6 @@ import { useDispatch, useSelector } from "react-redux";
 import { fetchMe } from "@/store/authSlice";
 import AdminSidebar from "@/components/layout/AdminSidebar";
 import { useRouter } from "next/navigation";
-import { FiLoader } from "react-icons/fi";
 
 function AdminBoot({ children }) {
   const dispatch = useDispatch();
@@ -26,7 +24,7 @@ function AdminBoot({ children }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center overflow-x-hidden">
         <div className="text-center">
           <div className="h-16 w-16 rounded-full border-4 border-slate-300 border-t-blue-600 animate-spin mx-auto mb-4"></div>
           <div className="text-slate-700 font-medium">Loading Admin Panel...</div>
@@ -36,19 +34,19 @@ function AdminBoot({ children }) {
   }
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-slate-50 to-slate-100">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 overflow-x-hidden">
       <div className="container py-6 px-4">
         <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
           <AdminSidebar />
-          <div className="space-y-6">
+          <div className="space-y-6 min-w-0">
             {/* Admin Header */}
-            <div className=" p-6 bg-linear-to-r from-slate-800 to-slate-900 text-white">
-              <div className="flex items-center justify-between">
-                <div>
+            <div className="p-6 bg-gradient-to-r from-slate-800 to-slate-900 text-white rounded-2xl">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
                   <h1 className="text-2xl font-bold">Admin Dashboard</h1>
-                  <p className="text-slate-300 mt-1">Welcome back, {user?.name}</p>
+                  <p className="text-slate-300 mt-1 truncate">Welcome back, {user?.name}</p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-shrink-0">
                   <div className="text-right">
                     <div className="text-sm text-slate-300">Role</div>
                     <div className="font-medium capitalize">{user?.role}</div>
@@ -59,9 +57,9 @@ function AdminBoot({ children }) {
                 </div>
               </div>
             </div>
-            
+
             {/* Main Content */}
-            <div className="card p-6 bg-white">
+            <div className="card p-6 bg-white min-w-0">
               {children}
             </div>
           </div>

@@ -1,7 +1,6 @@
-// app/admin/tournaments/page.js
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import Button from "@/components/ui/Button";
 import Table from "@/components/ui/Table";
@@ -18,8 +17,7 @@ import {
   FiBarChart2,
   FiTrash2,
   FiEye,
-  FiCalendar,
-  FiDollarSign
+  FiCalendar
 } from "react-icons/fi";
 import { GiTrophy, GiRank3, GiTeamIdea } from "react-icons/gi";
 import { MdOutlineEmojiEvents } from "react-icons/md";
@@ -33,8 +31,9 @@ export default function AdminTournamentsPage() {
   async function load() {
     setLoading(true);
     try {
-      const qs = `?limit=100&page=1${q ? `&status=${encodeURIComponent(q)}` : ""}`;
-      const res = await api.listTournaments(qs);
+      // IMPORTANT: backend list endpoint doesn't support title search
+      // so we fetch & filter client-side
+      const res = await api.listTournaments(`?limit=100&page=1`);
       setRows(res.data || []);
     } catch (error) {
       console.error("Failed to load tournaments:", error);
@@ -43,17 +42,17 @@ export default function AdminTournamentsPage() {
     }
   }
 
-  useEffect(() => { 
-    load(); 
+  useEffect(() => {
+    load();
   }, []);
 
   async function del(id) {
+    if (!id) return alert("Invalid tournament id");
     if (!confirm("Are you sure you want to delete this tournament? This action cannot be undone.")) return;
-    
+
     try {
       await api.adminDeleteTournament(id);
       await load();
-      // Show success toast
       alert("Tournament deleted successfully!");
     } catch (error) {
       alert("Failed to delete tournament: " + (error.message || "Please try again"));
@@ -61,28 +60,29 @@ export default function AdminTournamentsPage() {
   }
 
   const getStatusColor = (status) => {
-    switch(status) {
-      case 'registration_open': return 'bg-green-100 text-green-800';
-      case 'ongoing': return 'bg-amber-100 text-amber-800';
-      case 'completed': return 'bg-blue-100 text-blue-800';
-      case 'cancelled': return 'bg-red-100 text-red-800';
-      case 'upcoming': return 'bg-purple-100 text-purple-800';
-      default: return 'bg-slate-100 text-slate-800';
+    switch (status) {
+      case "registration_open": return "bg-green-100 text-green-800";
+      case "ongoing": return "bg-amber-100 text-amber-800";
+      case "completed": return "bg-blue-100 text-blue-800";
+      case "cancelled": return "bg-red-100 text-red-800";
+      case "upcoming": return "bg-purple-100 text-purple-800";
+      case "registration_closed": return "bg-slate-200 text-slate-800";
+      default: return "bg-slate-100 text-slate-800";
     }
   };
 
   const getTypeIcon = (type) => {
-    switch(type) {
-      case 'solo': return <GiTrophy className="w-4 h-4" />;
-      case 'duo': return <GiTeamIdea className="w-4 h-4" />;
-      case 'squad': return <GiRank3 className="w-4 h-4" />;
+    switch (type) {
+      case "solo": return <GiTrophy className="w-4 h-4" />;
+      case "duo": return <GiTeamIdea className="w-4 h-4" />;
+      case "squad": return <GiRank3 className="w-4 h-4" />;
       default: return <GiTrophy className="w-4 h-4" />;
     }
   };
 
   const columns = [
-    { 
-      key: "title", 
+    {
+      key: "title",
       title: "Tournament",
       render: (r) => (
         <div className="flex items-center gap-3">
@@ -94,50 +94,56 @@ export default function AdminTournamentsPage() {
             <div className="text-xs text-slate-500 flex items-center gap-2 mt-1">
               <span className="flex items-center gap-1">
                 {getTypeIcon(r.tournamentType)}
-                {r.tournamentType.toUpperCase()}
+                {String(r.tournamentType || "").toUpperCase()}
               </span>
               <span>•</span>
               <FiCalendar className="w-3 h-3" />
-              <span>{new Date(r.tournamentStartDate).toLocaleDateString()}</span>
+              <span>{r.tournamentStartDate ? new Date(r.tournamentStartDate).toLocaleDateString() : "—"}</span>
             </div>
           </div>
         </div>
       )
     },
-    { 
-      key: "status", 
+    {
+      key: "status",
       title: "Status",
       render: (r) => (
         <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(r.status)}`}>
-          {r.status.replace('_', ' ').toUpperCase()}
+          {String(r.status || "").replace("_", " ").toUpperCase()}
         </span>
       )
     },
-    { 
-      key: "participants", 
+    {
+      key: "participants",
       title: "Participants",
-      render: (r) => (
-        <div className="text-center">
-          <div className="font-bold text-slate-800">{r.currentParticipants || 0}/{r.maxParticipants}</div>
-          <div className="h-1 w-16 bg-slate-200 rounded-full overflow-hidden mx-auto mt-1">
-            <div 
-              className="h-full bg-gradient-to-r from-blue-500 to-cyan-500"
-              style={{ 
-                width: `${Math.min(100, ((r.currentParticipants || 0) / r.maxParticipants) * 100)}%` 
-              }}
-            ></div>
+      render: (r) => {
+        const current = r.currentParticipants || 0;
+        const max = r.maxParticipants || 1;
+        const pct = Math.min(100, (current / max) * 100);
+
+        return (
+          <div className="text-center">
+            <div className="font-bold text-slate-800">{current}/{max}</div>
+            <div className="h-1 w-16 bg-slate-200 rounded-full overflow-hidden mx-auto mt-1">
+              <div
+                className="h-full bg-gradient-to-r from-blue-500 to-cyan-500"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
           </div>
-        </div>
-      )
+        );
+      }
     },
-    { 
-      key: "prize", 
+    {
+      key: "prize",
       title: "Prize Pool",
       render: (r) => (
         <div className="text-right">
-          <div className="font-bold text-slate-800">₹{r.prizePool.toLocaleString()}</div>
+          <div className="font-bold text-slate-800">
+            ₹{Number(r.prizePool || 0).toLocaleString()}
+          </div>
           <div className="text-xs text-slate-500">
-            {r.isFree ? 'Free' : `₹${r.serviceFee} fee`}
+            {r.isFree ? "Free" : `₹${Number(r.serviceFee || 0)} fee`}
           </div>
         </div>
       )
@@ -147,28 +153,28 @@ export default function AdminTournamentsPage() {
       title: "Actions",
       render: (r) => (
         <div className="flex items-center gap-2">
-          <a 
+          <a
             href={`/admin/tournaments/${r._id}/edit`}
             className="h-8 w-8 rounded-lg border border-slate-300 hover:border-blue-500 hover:bg-blue-50 flex items-center justify-center transition-colors"
             title="Edit"
           >
             <FiEdit2 className="w-4 h-4 text-slate-600 hover:text-blue-600" />
           </a>
-          <a 
+          <a
             href={`/admin/tournaments/${r._id}/participants`}
             className="h-8 w-8 rounded-lg border border-slate-300 hover:border-green-500 hover:bg-green-50 flex items-center justify-center transition-colors"
             title="Participants"
           >
             <FiUsers className="w-4 h-4 text-slate-600 hover:text-green-600" />
           </a>
-          <a 
+          <a
             href={`/admin/tournaments/${r._id}/results`}
             className="h-8 w-8 rounded-lg border border-slate-300 hover:border-purple-500 hover:bg-purple-50 flex items-center justify-center transition-colors"
             title="Results"
           >
             <FiBarChart2 className="w-4 h-4 text-slate-600 hover:text-purple-600" />
           </a>
-          <a 
+          <a
             href={`/admin/tournaments/${r._id}/winners`}
             className="h-8 w-8 rounded-lg border border-slate-300 hover:border-amber-500 hover:bg-amber-50 flex items-center justify-center transition-colors"
             title="Winners"
@@ -187,23 +193,43 @@ export default function AdminTournamentsPage() {
     }
   ];
 
-  const filteredRows = rows.filter(row => {
-    if (statusFilter === "all") return true;
-    if (statusFilter === "active") {
-      return ["registration_open", "ongoing", "upcoming"].includes(row.status);
-    }
-    return row.status === statusFilter;
-  });
+  const filteredRows = useMemo(() => {
+    const query = q.trim().toLowerCase();
 
-  // Calculate stats
-  const stats = {
-    total: rows.length,
-    active: rows.filter(r => ["registration_open", "ongoing"].includes(r.status)).length,
-    upcoming: rows.filter(r => r.status === "upcoming").length,
-    completed: rows.filter(r => r.status === "completed").length,
-    totalPrize: rows.reduce((sum, r) => sum + r.prizePool, 0),
-    totalParticipants: rows.reduce((sum, r) => sum + (r.currentParticipants || 0), 0)
-  };
+    return rows.filter((row) => {
+      // status filter
+      if (statusFilter !== "all") {
+        if (statusFilter === "active") {
+          if (!["registration_open", "ongoing", "upcoming"].includes(row.status)) return false;
+        } else {
+          if (row.status !== statusFilter) return false;
+        }
+      }
+
+      // search filter (client-side)
+      if (!query) return true;
+
+      const hay = [
+        row.title,
+        row.status,
+        row.tournamentType,
+        row.map
+      ].filter(Boolean).join(" ").toLowerCase();
+
+      return hay.includes(query);
+    });
+  }, [rows, q, statusFilter]);
+
+  const stats = useMemo(() => {
+    return {
+      total: rows.length,
+      active: rows.filter((r) => ["registration_open", "ongoing"].includes(r.status)).length,
+      upcoming: rows.filter((r) => r.status === "upcoming").length,
+      completed: rows.filter((r) => r.status === "completed").length,
+      totalPrize: rows.reduce((sum, r) => sum + Number(r.prizePool || 0), 0),
+      totalParticipants: rows.reduce((sum, r) => sum + Number(r.currentParticipants || 0), 0)
+    };
+  }, [rows]);
 
   return (
     <div className="space-y-6">
@@ -213,67 +239,59 @@ export default function AdminTournamentsPage() {
           <h1 className="text-2xl font-bold text-slate-800">Tournaments Management</h1>
           <p className="text-slate-600 mt-1">Create, update, and manage all tournaments</p>
         </div>
-        <a 
-          href="/admin/tournaments/new"
-          className="btn btn-primary flex items-center gap-2"
-        >
+        <a href="/admin/tournaments/new" className="btn btn-primary flex items-center gap-2">
           <FiPlus className="w-4 h-4" />
           New Tournament
         </a>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <Card className="p-4 text-center">
           <div className="text-2xl font-bold text-slate-800">{stats.total}</div>
           <div className="text-sm text-slate-600">Total</div>
         </Card>
-        
         <Card className="p-4 text-center">
           <div className="text-2xl font-bold text-green-600">{stats.active}</div>
           <div className="text-sm text-slate-600">Active</div>
         </Card>
-        
         <Card className="p-4 text-center">
           <div className="text-2xl font-bold text-blue-600">{stats.upcoming}</div>
           <div className="text-sm text-slate-600">Upcoming</div>
         </Card>
-        
         <Card className="p-4 text-center">
           <div className="text-2xl font-bold text-purple-600">{stats.completed}</div>
           <div className="text-sm text-slate-600">Completed</div>
         </Card>
-        
         <Card className="p-4 text-center">
           <div className="text-2xl font-bold text-amber-600">₹{stats.totalPrize.toLocaleString()}</div>
           <div className="text-sm text-slate-600">Total Prize</div>
         </Card>
-        
         <Card className="p-4 text-center">
           <div className="text-2xl font-bold text-cyan-600">{stats.totalParticipants}</div>
           <div className="text-sm text-slate-600">Participants</div>
         </Card>
       </div>
 
-      {/* Filters and Search */}
+      {/* Filters + Search */}
       <Card className="p-6">
         <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1">
             <div className="relative">
-              <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+              <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
               <Input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Search tournaments by title or status..."
+                placeholder="Search tournaments by title, status, type, map..."
                 className="pl-10"
               />
             </div>
           </div>
-          
+
           <div className="flex gap-3">
             <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-lg">
               <FiFilter className="w-4 h-4 text-slate-600" />
-              <select 
+              <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="bg-transparent text-sm outline-none"
@@ -283,28 +301,29 @@ export default function AdminTournamentsPage() {
                 <option value="registration_open">Registration Open</option>
                 <option value="ongoing">Ongoing</option>
                 <option value="upcoming">Upcoming</option>
+                <option value="registration_closed">Registration Closed</option>
                 <option value="completed">Completed</option>
                 <option value="cancelled">Cancelled</option>
               </select>
             </div>
-            
-            <Button 
-              variant="outline" 
+
+            <Button
+              variant="outline"
               onClick={load}
               loading={loading}
               className="flex items-center gap-2"
             >
-              <FiRefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <FiRefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
               Refresh
             </Button>
           </div>
         </div>
       </Card>
 
-      {/* Tournaments Table */}
+      {/* Table */}
       {loading ? (
         <Card className="p-8 text-center">
-          <div className="h-12 w-12 rounded-full border-4 border-slate-300 border-t-blue-600 animate-spin mx-auto mb-4"></div>
+          <div className="h-12 w-12 rounded-full border-4 border-slate-300 border-t-blue-600 animate-spin mx-auto mb-4" />
           <div className="text-slate-700 font-medium">Loading tournaments...</div>
         </Card>
       ) : filteredRows.length === 0 ? (
@@ -323,7 +342,7 @@ export default function AdminTournamentsPage() {
         <Table columns={columns} rows={filteredRows} />
       )}
 
-      {/* Quick Tips */}
+      {/* Tips */}
       <Card className="p-6 bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200">
         <div className="flex items-start gap-3">
           <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center">
@@ -332,10 +351,9 @@ export default function AdminTournamentsPage() {
           <div>
             <h4 className="font-semibold text-slate-800 mb-2">Quick Tips</h4>
             <ul className="text-sm text-slate-600 space-y-1">
-              <li>• Click on tournament title to view details</li>
-              <li>• Use status filter to view specific tournament types</li>
+              <li>• Search works on title/status/type/map (client-side)</li>
               <li>• Deleting tournaments is permanent - use with caution</li>
-              <li>• You can edit participants and winners after tournament completion</li>
+              <li>• Results/Winners options are available after matches</li>
             </ul>
           </div>
         </div>

@@ -5,11 +5,10 @@ import { api } from "@/lib/api";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
-import { 
-  FiAward, 
-  FiUsers, 
-  FiDollarSign, 
-  FiTarget, 
+import {
+  FiAward,
+  FiUsers,
+  FiDollarSign,
   FiBarChart2,
   FiPlus,
   FiSave,
@@ -18,12 +17,7 @@ import {
   FiUser,
   FiHash
 } from "react-icons/fi";
-import { 
-  GiTrophy,
-  GiRank3,
-  GiTeamIdea,
-  GiCrossedSwords
-} from "react-icons/gi";
+import { GiTrophy, GiTeamIdea, GiCrossedSwords } from "react-icons/gi";
 import { MdOutlineEmojiEvents } from "react-icons/md";
 
 function emptyWinner() {
@@ -31,25 +25,26 @@ function emptyWinner() {
 }
 
 export default function AdminWinnersPage({ params }) {
-  const { id } = React.use(params);
+  const {id} = React.use(params);
+
   const [tournament, setTournament] = useState(null);
-  const [participants, setParticipants] = useState([]);
+  const [participantsData, setParticipantsData] = useState(null); // squad: array teams, solo/duo: tournament object
   const [winners, setWinners] = useState([emptyWinner(), emptyWinner(), emptyWinner()]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    if (!id) return;
+
     (async () => {
       setLoading(true);
       try {
-        const [tRes, pRes] = await Promise.all([
-          api.getTournament(id),
-          api.adminParticipants(id)
-        ]);
+        const [tRes, pRes] = await Promise.all([api.getTournament(id), api.adminParticipants(id)]);
         setTournament(tRes.data);
-        setParticipants(pRes.data || []);
+        setParticipantsData(pRes.data);
       } catch (error) {
         console.error("Failed to load data:", error);
+        alert("Failed to load tournament/participants");
       } finally {
         setLoading(false);
       }
@@ -59,56 +54,80 @@ export default function AdminWinnersPage({ params }) {
   const isSquad = tournament?.tournamentType === "squad";
 
   const squadTeams = useMemo(() => {
-    if (!isSquad || !Array.isArray(participants)) return [];
-    return participants.map((team, index) => ({
+    if (!isSquad || !Array.isArray(participantsData)) return [];
+    return participantsData.map((team, index) => ({
       id: team._id,
       name: team.teamName || `Team ${index + 1}`,
-      captain: team.captain?.userId?.name || "Unknown",
-      members: team.members?.length || 0,
+      captain: team.captain?.userId?.name || team.captain?.inGameName || "Unknown",
       points: team.totalPoints || 0,
       kills: team.totalKills || 0
     }));
-  }, [participants, isSquad]);
+  }, [participantsData, isSquad]);
 
-  const soloDuoParticipants = useMemo(() => {
-    if (isSquad || !Array.isArray(participants)) return [];
-    return participants.map((user, index) => ({
-      id: user.userId?._id,
-      name: user.userId?.name || `Player ${index + 1}`,
-      bgmiId: user.bgmiId || "N/A",
-      points: user.totalPoints || 0,
-      kills: user.totalKills || 0
+  const soloDuoPlayers = useMemo(() => {
+    if (isSquad) return [];
+    const list = participantsData?.participants || [];
+    return list.map((p, index) => ({
+      id: p.userId?._id || p.userId,
+      name: p.userId?.name || p.inGameName || `Player ${index + 1}`,
+      bgmiId: p.bgmiId || "N/A",
+      points: p.totalPoints || 0,
+      kills: p.totalKills || 0
     }));
-  }, [participants, isSquad]);
+  }, [participantsData, isSquad]);
 
   function updateWinner(index, key, value) {
-    setWinners(prev => prev.map((w, idx) => 
-      idx === index ? { ...w, [key]: value } : w
-    ));
+    setWinners((prev) => prev.map((w, idx) => (idx === index ? { ...w, [key]: value } : w)));
   }
 
   function addWinner() {
-    setWinners(prev => [...prev, {
-      ...emptyWinner(),
-      rank: prev.length + 1
-    }]);
+    setWinners((prev) => [...prev, { ...emptyWinner(), rank: prev.length + 1 }]);
   }
 
   function removeWinner(index) {
-    if (winners.length > 1) {
-      setWinners(prev => prev.filter((_, idx) => idx !== index));
+    if (winners.length <= 1) return;
+    setWinners((prev) => prev.filter((_, idx) => idx !== index));
+  }
+
+  const totalPrize = useMemo(() => {
+    return winners.reduce((sum, w) => sum + Number(w.prizeAmount || 0), 0);
+  }, [winners]);
+
+  const pool = Number(tournament?.prizePool || 0);
+  const remaining = pool - totalPrize;
+
+  function validateBeforeSubmit() {
+    if (totalPrize > pool) return "Prize pool exceeded. Reduce prize amounts.";
+
+    const ranks = winners
+      .filter((w) => Number(w.prizeAmount) > 0)
+      .map((w) => Number(w.rank))
+      .filter((r) => r > 0);
+
+    const unique = new Set(ranks);
+    if (unique.size !== ranks.length) return "Ranks must be unique.";
+
+    for (const w of winners) {
+      if (Number(w.prizeAmount || 0) <= 0) continue;
+      if (isSquad && !w.teamId) return "Select team for all winners having prize.";
+      if (!isSquad && !w.userId) return "Select player for all winners having prize.";
     }
+
+    return null;
   }
 
   async function submitWinners() {
+    const err = validateBeforeSubmit();
+    if (err) return alert(err);
+
     setSubmitting(true);
     try {
       const payload = {
         winners: winners
-          .filter(w => Number(w.rank) > 0 && Number(w.prizeAmount) > 0)
-          .map(w => ({
-            teamId: isSquad ? (w.teamId || undefined) : undefined,
-            userId: !isSquad ? (w.userId || undefined) : undefined,
+          .filter((w) => Number(w.rank) > 0 && Number(w.prizeAmount) > 0)
+          .map((w) => ({
+            teamId: isSquad ? w.teamId : undefined,
+            userId: !isSquad ? w.userId : undefined,
             rank: Number(w.rank),
             prizeAmount: Number(w.prizeAmount),
             totalKills: Number(w.totalKills || 0),
@@ -122,7 +141,7 @@ export default function AdminWinnersPage({ params }) {
       }
 
       await api.adminDeclareWinners(id, payload);
-      alert("✅ Winners declared successfully! Prize credited to wallet (captain for squad).");
+      alert("✅ Winners declared successfully!");
     } catch (error) {
       alert(`❌ Error: ${error.message}`);
     } finally {
@@ -130,9 +149,7 @@ export default function AdminWinnersPage({ params }) {
     }
   }
 
-  const calculateTotalPrize = () => {
-    return winners.reduce((total, w) => total + Number(w.prizeAmount || 0), 0);
-  };
+  if (!id) return <div className="text-sm text-red-600">Missing tournament id.</div>;
 
   if (loading) {
     return (
@@ -140,7 +157,7 @@ export default function AdminWinnersPage({ params }) {
         <div className="h-8 skeleton rounded-lg w-48"></div>
         <div className="h-4 skeleton rounded w-64"></div>
         <div className="card p-6 space-y-4">
-          {[1,2,3].map(i => (
+          {[1, 2, 3].map((i) => (
             <div key={i} className="h-20 skeleton rounded-xl"></div>
           ))}
         </div>
@@ -158,9 +175,15 @@ export default function AdminWinnersPage({ params }) {
     );
   }
 
+  const joinedCount = isSquad
+    ? (Array.isArray(participantsData) ? participantsData.length : 0)
+    : (participantsData?.participants?.length || 0);
+
+  const availableCount = isSquad ? squadTeams.length : soloDuoPlayers.length;
+
   return (
     <div className="space-y-6">
-      {/* Header Section */}
+      {/* Header */}
       <div className="border-b border-slate-200 pb-4">
         <div className="flex items-start justify-between">
           <div>
@@ -173,13 +196,13 @@ export default function AdminWinnersPage({ params }) {
             </div>
           </div>
           <div className="text-right">
-            <div className="text-2xl font-bold text-green-600">₹{tournament.prizePool.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-green-600">₹{pool.toLocaleString()}</div>
             <div className="text-sm text-slate-600">Total Prize Pool</div>
           </div>
         </div>
       </div>
 
-      {/* Tournament Info Card */}
+      {/* Info */}
       <Card className="p-6 bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="flex items-center gap-4">
@@ -193,309 +216,225 @@ export default function AdminWinnersPage({ params }) {
               </div>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-4">
             <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-green-100 to-green-50 flex items-center justify-center">
               <FiUsers className="w-6 h-6 text-green-600" />
             </div>
             <div>
-              <div className="text-sm text-slate-600">Participants</div>
-              <div className="font-bold text-slate-800">{participants.length} Joined</div>
+              <div className="text-sm text-slate-600">Joined</div>
+              <div className="font-bold text-slate-800">{joinedCount}</div>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-4">
             <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-amber-100 to-amber-50 flex items-center justify-center">
               <MdOutlineEmojiEvents className="w-6 h-6 text-amber-600" />
             </div>
             <div>
-              <div className="text-sm text-slate-600">Available Teams/Players</div>
-              <div className="font-bold text-slate-800">
-                {isSquad ? squadTeams.length : soloDuoParticipants.length}
-              </div>
+              <div className="text-sm text-slate-600">Available</div>
+              <div className="font-bold text-slate-800">{availableCount}</div>
             </div>
           </div>
         </div>
       </Card>
 
-      {/* Winners Form */}
-      <div className="space-y-6">
+      {/* Actions */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+            <FiAward className="w-5 h-5" />
+            Winners Configuration
+          </h2>
+          <p className="text-slate-600 text-sm mt-1">Assign ranks and prize amounts</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={addWinner} className="flex items-center gap-2" type="button">
+            <FiPlus className="w-4 h-4" />
+            Add Winner
+          </Button>
+          <Button
+            onClick={submitWinners}
+            loading={submitting}
+            disabled={totalPrize > pool}
+            className="bg-gradient-to-r from-green-500 to-emerald-500 flex items-center gap-2"
+            type="button"
+          >
+            <FiSave className="w-4 h-4" />
+            {submitting ? "Declaring..." : "Declare Winners"}
+          </Button>
+        </div>
+      </div>
+
+      {/* Summary */}
+      <Card className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200">
         <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-              <FiAward className="w-5 h-5" />
-              Winners Configuration
-            </h2>
-            <p className="text-slate-600 text-sm mt-1">
-              Assign ranks, prizes and stats to the top performers
-            </p>
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-green-100 to-green-50 flex items-center justify-center">
+              <FiDollarSign className="w-5 h-5 text-green-600" />
+            </div>
+            <div>
+              <div className="text-sm text-slate-600">Total Prize Distribution</div>
+              <div className="text-xl font-bold text-green-700">₹{totalPrize.toLocaleString()}</div>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <Button 
-              variant="outline" 
-              onClick={addWinner}
-              className="flex items-center gap-2"
-            >
-              <FiPlus className="w-4 h-4" />
-              Add Winner
-            </Button>
-            <Button 
-              onClick={submitWinners}
-              loading={submitting}
-              className="bg-gradient-to-r from-green-500 to-emerald-500 flex items-center gap-2"
-            >
-              <FiSave className="w-4 h-4" />
-              {submitting ? "Declaring..." : "Declare Winners"}
-            </Button>
+          <div className="text-right">
+            <div className="text-sm text-slate-600">Remaining Prize Pool</div>
+            <div className={`text-lg font-bold ${remaining < 0 ? "text-red-600" : "text-blue-600"}`}>
+              ₹{remaining.toLocaleString()}
+            </div>
           </div>
         </div>
+      </Card>
 
-        {/* Prize Distribution Summary */}
-        <Card className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-green-100 to-green-50 flex items-center justify-center">
-                <FiDollarSign className="w-5 h-5 text-green-600" />
-              </div>
-              <div>
-                <div className="text-sm text-slate-600">Total Prize Distribution</div>
-                <div className="text-xl font-bold text-green-700">₹{calculateTotalPrize().toLocaleString()}</div>
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="text-sm text-slate-600">Remaining Prize Pool</div>
-              <div className="text-lg font-bold text-blue-600">
-                ₹{(tournament.prizePool - calculateTotalPrize()).toLocaleString()}
-              </div>
-            </div>
-          </div>
-        </Card>
-
-        {/* Winners List */}
-        <div className="space-y-4">
-          {winners.map((winner, index) => (
-            <Card key={index} className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className={`
+      {/* Winners List */}
+      <div className="space-y-4">
+        {winners.map((winner, index) => (
+          <Card key={index} className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`
                     h-10 w-10 rounded-xl flex items-center justify-center text-white font-bold
-                    ${index === 0 ? 'bg-gradient-to-br from-yellow-500 to-amber-500' :
-                      index === 1 ? 'bg-gradient-to-br from-slate-400 to-slate-500' :
-                      index === 2 ? 'bg-gradient-to-br from-amber-700 to-amber-800' :
-                      'bg-gradient-to-br from-slate-700 to-slate-800'}
-                  `}>
-                    #{winner.rank || index + 1}
-                  </div>
-                  <div>
-                    <div className="font-bold text-slate-800">
-                      {index === 0 ? '1st Place' :
-                       index === 1 ? '2nd Place' :
-                       index === 2 ? '3rd Place' :
-                       `${index + 1}th Place`}
-                    </div>
-                    <div className="text-sm text-slate-600">Winner Configuration</div>
-                  </div>
+                    ${index === 0 ? "bg-gradient-to-br from-yellow-500 to-amber-500" :
+                      index === 1 ? "bg-gradient-to-br from-slate-400 to-slate-500" :
+                      index === 2 ? "bg-gradient-to-br from-amber-700 to-amber-800" :
+                      "bg-gradient-to-br from-slate-700 to-slate-800"}
+                  `}
+                >
+                  #{winner.rank || index + 1}
                 </div>
-                {winners.length > 1 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removeWinner(index)}
-                    className="text-red-500 hover:text-red-600"
-                  >
-                    <FiX className="w-4 h-4" />
-                  </Button>
+                <div>
+                  <div className="font-bold text-slate-800">
+                    {index === 0 ? "1st Place" : index === 1 ? "2nd Place" : index === 2 ? "3rd Place" : `${index + 1}th Place`}
+                  </div>
+                  <div className="text-sm text-slate-600">Winner Configuration</div>
+                </div>
+              </div>
+
+              {winners.length > 1 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => removeWinner(index)}
+                  className="text-red-500 hover:text-red-600"
+                  type="button"
+                >
+                  <FiX className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5 flex items-center gap-2">
+                  <FiHash className="w-4 h-4" /> Rank
+                </label>
+                <Input
+                  type="number"
+                  value={winner.rank}
+                  onChange={(e) => updateWinner(index, "rank", e.target.value)}
+                  min="1"
+                  className="text-center font-bold"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-slate-700 mb-1.5 flex items-center gap-2">
+                  {isSquad ? <GiTeamIdea className="w-4 h-4" /> : <FiUser className="w-4 h-4" />}
+                  {isSquad ? "Select Team" : "Select Player"}
+                </label>
+
+                {isSquad ? (
+                  <select className="input" value={winner.teamId} onChange={(e) => updateWinner(index, "teamId", e.target.value)}>
+                    <option value="">-- Select Team --</option>
+                    {squadTeams.map((team) => (
+                      <option key={team.id} value={team.id}>
+                        {team.name} • Captain: {team.captain} • {team.points} pts
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <select className="input" value={winner.userId} onChange={(e) => updateWinner(index, "userId", e.target.value)}>
+                    <option value="">-- Select Player --</option>
+                    {soloDuoPlayers.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} • {p.bgmiId} • {p.points} pts
+                      </option>
+                    ))}
+                  </select>
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
-                {/* Rank Input */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5 flex items-center gap-2">
-                    <FiHash className="w-4 h-4" />
-                    Rank
-                  </label>
-                  <Input
-                    type="number"
-                    value={winner.rank}
-                    onChange={(e) => updateWinner(index, "rank", e.target.value)}
-                    min="1"
-                    className="text-center font-bold"
-                  />
-                </div>
-
-                {/* Team/User Selection */}
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5 flex items-center gap-2">
-                    {isSquad ? <GiTeamIdea className="w-4 h-4" /> : <FiUser className="w-4 h-4" />}
-                    {isSquad ? "Select Team" : "Select Player"}
-                  </label>
-                  {isSquad ? (
-                    <select 
-                      className="input"
-                      value={winner.teamId}
-                      onChange={(e) => updateWinner(index, "teamId", e.target.value)}
-                    >
-                      <option value="">-- Select Team --</option>
-                      {squadTeams.map((team) => (
-                        <option key={team.id} value={team.id}>
-                          {team.name} • Captain: {team.captain} • {team.points} pts
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <select 
-                      className="input"
-                      value={winner.userId}
-                      onChange={(e) => updateWinner(index, "userId", e.target.value)}
-                    >
-                      <option value="">-- Select Player --</option>
-                      {soloDuoParticipants.map((player) => (
-                        <option key={player.id} value={player.id}>
-                          {player.name} • {player.bgmiId} • {player.points} pts
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-
-                {/* Prize Amount */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5 flex items-center gap-2">
-                    <FiDollarSign className="w-4 h-4" />
-                    Prize (₹)
-                  </label>
-                  <Input
-                    type="number"
-                    value={winner.prizeAmount}
-                    onChange={(e) => updateWinner(index, "prizeAmount", e.target.value)}
-                    min="0"
-                    placeholder="0"
-                  />
-                </div>
-
-                {/* Kills */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5 flex items-center gap-2">
-                    <GiCrossedSwords className="w-4 h-4" />
-                    Kills
-                  </label>
-                  <Input
-                    type="number"
-                    value={winner.totalKills}
-                    onChange={(e) => updateWinner(index, "totalKills", e.target.value)}
-                    min="0"
-                    placeholder="0"
-                  />
-                </div>
-
-                {/* Points */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5 flex items-center gap-2">
-                    <FiBarChart2 className="w-4 h-4" />
-                    Points
-                  </label>
-                  <Input
-                    type="number"
-                    value={winner.totalPoints}
-                    onChange={(e) => updateWinner(index, "totalPoints", e.target.value)}
-                    min="0"
-                    placeholder="0"
-                  />
-                </div>
-              </div>
-
-              {/* Winner Summary */}
-              <div className="mt-4 pt-4 border-t border-slate-200">
-                <div className="flex items-center justify-between text-sm">
-                  <div className="text-slate-600">
-                    {winner.teamId || winner.userId ? "Selected: " : "No selection"}
-                    <span className="font-medium text-slate-800 ml-1">
-                      {isSquad 
-                        ? squadTeams.find(t => t.id === winner.teamId)?.name || "None"
-                        : soloDuoParticipants.find(p => p.id === winner.userId)?.name || "None"
-                      }
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-slate-600">Total Prize: </span>
-                    <span className="font-bold text-green-600">₹{winner.prizeAmount || 0}</span>
-                  </div>
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
-
-        {/* Help Text */}
-        <Card className="p-4 bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200">
-          <div className="flex items-start gap-3">
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center flex-shrink-0">
-              <FiCheck className="w-4 h-4 text-blue-600" />
-            </div>
-            <div className="text-sm text-slate-700">
-              <div className="font-medium text-slate-800 mb-1">Important Notes:</div>
-              <ul className="space-y-1">
-                <li>• Prize amount will be credited to the wallet (captain for squad tournaments)</li>
-                <li>• Make sure the total prize distribution does not exceed the tournament prize pool</li>
-                <li>• Ranks should be unique and sequential</li>
-                <li>• All winners must be selected from the tournament participants</li>
-              </ul>
-            </div>
-          </div>
-        </Card>
-
-        {/* Bottom Actions */}
-        <div className="flex items-center justify-between pt-4 border-t border-slate-200">
-          <div className="text-sm text-slate-600">
-            <div className="font-medium">Summary:</div>
-            <div>{winners.length} winners • ₹{calculateTotalPrize().toLocaleString()} total prize • {participants.length} participants</div>
-          </div>
-          <div className="flex gap-3">
-            <Button 
-              variant="outline" 
-              onClick={() => setWinners([emptyWinner(), emptyWinner(), emptyWinner()])}
-            >
-              Reset All
-            </Button>
-            <Button 
-              onClick={submitWinners}
-              loading={submitting}
-              disabled={calculateTotalPrize() > tournament.prizePool}
-              className="bg-gradient-to-r from-green-500 to-emerald-500 flex items-center gap-2"
-            >
-              {submitting ? (
-                <>
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                  Declaring Winners...
-                </>
-              ) : (
-                <>
-                  <FiSave className="w-4 h-4" />
-                  Declare Winners
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-
-        {/* Prize Pool Warning */}
-        {calculateTotalPrize() > tournament.prizePool && (
-          <div className="p-4 bg-gradient-to-r from-red-50 to-rose-50 border border-red-200 rounded-xl">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-red-100 to-red-50 flex items-center justify-center">
-                <FiX className="w-5 h-5 text-red-600" />
-              </div>
               <div>
-                <div className="font-medium text-red-800">Prize Pool Exceeded!</div>
-                <div className="text-sm text-red-700">
-                  Total prize distribution (₹{calculateTotalPrize().toLocaleString()}) exceeds tournament prize pool (₹{tournament.prizePool.toLocaleString()})
-                </div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5 flex items-center gap-2">
+                  <FiDollarSign className="w-4 h-4" /> Prize (₹)
+                </label>
+                <Input
+                  type="number"
+                  value={winner.prizeAmount}
+                  onChange={(e) => updateWinner(index, "prizeAmount", e.target.value)}
+                  min="0"
+                  placeholder="0"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5 flex items-center gap-2">
+                  <GiCrossedSwords className="w-4 h-4" /> Kills
+                </label>
+                <Input
+                  type="number"
+                  value={winner.totalKills}
+                  onChange={(e) => updateWinner(index, "totalKills", e.target.value)}
+                  min="0"
+                  placeholder="0"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5 flex items-center gap-2">
+                  <FiBarChart2 className="w-4 h-4" /> Points
+                </label>
+                <Input
+                  type="number"
+                  value={winner.totalPoints}
+                  onChange={(e) => updateWinner(index, "totalPoints", e.target.value)}
+                  min="0"
+                  placeholder="0"
+                />
               </div>
             </div>
-          </div>
-        )}
+          </Card>
+        ))}
       </div>
+
+      {/* Notes */}
+      <Card className="p-4 bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200">
+        <div className="flex items-start gap-3">
+          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center flex-shrink-0">
+            <FiCheck className="w-4 h-4 text-blue-600" />
+          </div>
+          <div className="text-sm text-slate-700">
+            <div className="font-medium text-slate-800 mb-1">Important Notes:</div>
+            <ul className="space-y-1">
+              <li>• Winners must be from tournament participants.</li>
+              <li>• Total prize distribution must not exceed prize pool.</li>
+              <li>• Squad tournaments: select team (payout is handled in backend logic if you implemented wallet credit).</li>
+            </ul>
+          </div>
+        </div>
+      </Card>
+
+      {/* Warning */}
+      {totalPrize > pool && (
+        <div className="p-4 bg-gradient-to-r from-red-50 to-rose-50 border border-red-200 rounded-xl">
+          <div className="font-medium text-red-800">Prize Pool Exceeded!</div>
+          <div className="text-sm text-red-700">
+            Distribution ₹{totalPrize.toLocaleString()} exceeds pool ₹{pool.toLocaleString()}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

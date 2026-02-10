@@ -1,24 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
-import { 
-  FiPlus, 
-  FiCalendar, 
-  FiDollarSign, 
-  FiUsers,
-  FiMapPin,
+import {
+  FiCalendar,
+  FiDollarSign,
   FiEye,
-  FiAward,
   FiSettings,
   FiSave,
   FiX,
   FiCheck
 } from "react-icons/fi";
-import { 
+import {
   GiTrophy,
   GiCrossedSwords,
   GiTargetPrize,
@@ -37,9 +33,17 @@ const defaultPlacementPoints = [
   { placement: 8, points: 1 }
 ];
 
+function toISOIfPresent(v) {
+  if (!v) return "";
+  // v comes like "2026-02-09T12:30"
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? "" : d.toISOString();
+}
+
 export default function NewTournamentPage() {
   const [loading, setLoading] = useState(false);
   const [activeSection, setActiveSection] = useState("basic");
+  const [jsonError, setJsonError] = useState(null);
 
   const [form, setForm] = useState({
     title: "",
@@ -71,20 +75,66 @@ export default function NewTournamentPage() {
     setForm((p) => ({ ...p, [key]: value }));
   }
 
-  async function onSubmit(e) {
-    e.preventDefault();
+  // Helpful auto team size (optional)
+  useEffect(() => {
+    if (form.tournamentType === "solo") set("teamSize", 1);
+    if (form.tournamentType === "duo") set("teamSize", 2);
+    if (form.tournamentType === "squad") set("teamSize", 4);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.tournamentType]);
+
+  // Keep serviceFee consistent
+  useEffect(() => {
+    if (form.isFree) set("serviceFee", 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.isFree]);
+
+  async function handleSubmit() {
     setLoading(true);
+    setJsonError(null);
+
     try {
+      // convert placementPoints safely
+      const placementPoints = Array.isArray(form.placementPoints) ? form.placementPoints : defaultPlacementPoints;
+
       const payload = {
-        ...form,
+        title: form.title?.trim(),
+        description: form.description?.trim(),
+        tournamentType: form.tournamentType,
         teamSize: Number(form.teamSize),
         maxParticipants: Number(form.maxParticipants),
-        serviceFee: Number(form.serviceFee),
+
+        // Send ISO to backend
+        registrationStartDate: toISOIfPresent(form.registrationStartDate),
+        registrationEndDate: toISOIfPresent(form.registrationEndDate),
+        tournamentStartDate: toISOIfPresent(form.tournamentStartDate),
+        tournamentEndDate: toISOIfPresent(form.tournamentEndDate),
+
+        isFree: Boolean(form.isFree),
+        serviceFee: Number(form.isFree ? 0 : form.serviceFee),
         prizePool: Number(form.prizePool),
+
         killPoints: Number(form.killPoints),
+        placementPoints,
+
         totalMatches: Number(form.totalMatches),
-        matchesPerDay: Number(form.matchesPerDay)
+        matchesPerDay: Number(form.matchesPerDay),
+        map: form.map,
+        perspective: form.perspective,
+        status: form.status,
+
+        bannerImage: form.bannerImage?.trim() || undefined,
+        featuredImage: form.featuredImage?.trim() || undefined,
+
+        roomId: form.roomId?.trim() || undefined,
+        roomPassword: form.roomPassword?.trim() || undefined
       };
+
+      // Basic required validation (UI level)
+      if (!payload.title) throw new Error("Tournament title is required");
+      if (!payload.description) throw new Error("Description is required");
+      if (!payload.registrationStartDate || !payload.registrationEndDate) throw new Error("Registration dates required");
+      if (!payload.tournamentStartDate || !payload.tournamentEndDate) throw new Error("Tournament dates required");
 
       const res = await api.adminCreateTournament(payload);
       alert("✅ Tournament created successfully!");
@@ -96,6 +146,11 @@ export default function NewTournamentPage() {
     }
   }
 
+  function onSubmit(e) {
+    e.preventDefault();
+    handleSubmit();
+  }
+
   const sections = [
     { id: "basic", label: "Basic Info", icon: <GiTrophy className="w-4 h-4" /> },
     { id: "schedule", label: "Schedule", icon: <FiCalendar className="w-4 h-4" /> },
@@ -104,6 +159,14 @@ export default function NewTournamentPage() {
     { id: "scoring", label: "Scoring", icon: <GiRank3 className="w-4 h-4" /> },
     { id: "advanced", label: "Advanced", icon: <MdSecurity className="w-4 h-4" /> }
   ];
+
+  const previewStatusClass = useMemo(() => {
+    if (form.status === "draft") return "bg-slate-100 text-slate-700";
+    if (form.status === "upcoming") return "bg-blue-100 text-blue-700";
+    if (form.status === "registration_open") return "bg-green-100 text-green-700";
+    if (form.status === "ongoing") return "bg-amber-100 text-amber-700";
+    return "bg-red-100 text-red-700";
+  }, [form.status]);
 
   return (
     <div className="space-y-6">
@@ -115,11 +178,11 @@ export default function NewTournamentPage() {
             <p className="text-slate-600 mt-1">Setup professional BGMI tournaments with detailed configuration</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => window.history.back()}>
+            <Button variant="outline" type="button" onClick={() => window.history.back()}>
               <FiX className="w-4 h-4 mr-2" />
               Cancel
             </Button>
-            <Button onClick={onSubmit} loading={loading}>
+            <Button type="button" onClick={handleSubmit} loading={loading}>
               <FiSave className="w-4 h-4 mr-2" />
               {loading ? "Creating..." : "Create Tournament"}
             </Button>
@@ -128,13 +191,14 @@ export default function NewTournamentPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Sidebar Navigation */}
+        {/* Sidebar */}
         <div className="lg:col-span-1">
           <Card className="p-4">
             <div className="space-y-1">
               {sections.map((section) => (
                 <button
                   key={section.id}
+                  type="button"
                   onClick={() => setActiveSection(section.id)}
                   className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-colors ${
                     activeSection === section.id
@@ -150,34 +214,26 @@ export default function NewTournamentPage() {
               ))}
             </div>
 
-            {/* Preview Stats */}
+            {/* Preview */}
             <div className="mt-8 p-4 bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl border border-blue-200">
               <h4 className="font-semibold text-slate-800 mb-3">Tournament Preview</h4>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-slate-600">Type:</span>
-                  <span className="font-medium">{form.tournamentType.toUpperCase()}</span>
+                  <span className="font-medium">{String(form.tournamentType).toUpperCase()}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-600">Prize Pool:</span>
-                  <span className="font-bold text-green-600">₹{form.prizePool}</span>
+                  <span className="font-bold text-green-600">₹{Number(form.prizePool || 0)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-600">Entry:</span>
-                  <span className="font-medium">
-                    {form.isFree ? "FREE" : `₹${form.serviceFee}`}
-                  </span>
+                  <span className="font-medium">{form.isFree ? "FREE" : `₹${Number(form.serviceFee || 0)}`}</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center">
                   <span className="text-slate-600">Status:</span>
-                  <span className={`px-2 py-1 rounded text-xs font-medium ${
-                    form.status === 'draft' ? 'bg-slate-100 text-slate-700' :
-                    form.status === 'upcoming' ? 'bg-blue-100 text-blue-700' :
-                    form.status === 'registration_open' ? 'bg-green-100 text-green-700' :
-                    form.status === 'ongoing' ? 'bg-amber-100 text-amber-700' :
-                    'bg-red-100 text-red-700'
-                  }`}>
-                    {form.status.replace('_', ' ')}
+                  <span className={`px-2 py-1 rounded text-xs font-medium ${previewStatusClass}`}>
+                    {String(form.status).replace("_", " ")}
                   </span>
                 </div>
               </div>
@@ -188,7 +244,7 @@ export default function NewTournamentPage() {
         {/* Main Form */}
         <div className="lg:col-span-3">
           <form onSubmit={onSubmit}>
-            {/* Basic Info Section */}
+            {/* BASIC */}
             {activeSection === "basic" && (
               <div className="space-y-6">
                 <Card className="p-6">
@@ -198,7 +254,7 @@ export default function NewTournamentPage() {
                     </div>
                     <div>
                       <h3 className="text-lg font-bold text-slate-800">Basic Information</h3>
-                      <p className="text-slate-600 text-sm">Set up tournament title, description and basic details</p>
+                      <p className="text-slate-600 text-sm">Set title, description and basic details</p>
                     </div>
                   </div>
 
@@ -211,11 +267,12 @@ export default function NewTournamentPage() {
                       required
                       icon={<MdOutlineEmojiEvents className="w-4 h-4" />}
                     />
+
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1.5">
                         Tournament Type
                       </label>
-                      <select 
+                      <select
                         className="input"
                         value={form.tournamentType}
                         onChange={(e) => set("tournamentType", e.target.value)}
@@ -232,36 +289,25 @@ export default function NewTournamentPage() {
                       label="Description"
                       value={form.description}
                       onChange={(e) => set("description", e.target.value)}
-                      placeholder="Describe your tournament rules, format, and other details..."
+                      placeholder="Describe rules, format, etc..."
                       multiline
                       rows={4}
+                      required
                     />
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Map
-                      </label>
-                      <select 
-                        className="input"
-                        value={form.map}
-                        onChange={(e) => set("map", e.target.value)}
-                      >
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Map</label>
+                      <select className="input" value={form.map} onChange={(e) => set("map", e.target.value)}>
                         {["Erangel","Miramar","Sanhok","Vikendi","Livik","Karakin","Deston"].map((m) => (
                           <option key={m} value={m}>{m}</option>
                         ))}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Perspective
-                      </label>
-                      <select 
-                        className="input"
-                        value={form.perspective}
-                        onChange={(e) => set("perspective", e.target.value)}
-                      >
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Perspective</label>
+                      <select className="input" value={form.perspective} onChange={(e) => set("perspective", e.target.value)}>
                         <option value="TPP">TPP</option>
                         <option value="FPP">FPP</option>
                       </select>
@@ -273,6 +319,7 @@ export default function NewTournamentPage() {
                       onChange={(e) => set("teamSize", e.target.value)}
                       min="1"
                       max="4"
+                      required
                     />
                     <Input
                       label="Max Participants"
@@ -280,13 +327,14 @@ export default function NewTournamentPage() {
                       value={form.maxParticipants}
                       onChange={(e) => set("maxParticipants", e.target.value)}
                       min="1"
+                      required
                     />
                   </div>
                 </Card>
               </div>
             )}
 
-            {/* Schedule Section */}
+            {/* SCHEDULE */}
             {activeSection === "schedule" && (
               <div className="space-y-6">
                 <Card className="p-6">
@@ -302,9 +350,7 @@ export default function NewTournamentPage() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Registration Start
-                      </label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Registration Start</label>
                       <input
                         type="datetime-local"
                         className="input"
@@ -314,9 +360,7 @@ export default function NewTournamentPage() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Registration End
-                      </label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Registration End</label>
                       <input
                         type="datetime-local"
                         className="input"
@@ -326,9 +370,7 @@ export default function NewTournamentPage() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Tournament Start
-                      </label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Tournament Start</label>
                       <input
                         type="datetime-local"
                         className="input"
@@ -338,9 +380,7 @@ export default function NewTournamentPage() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Tournament End
-                      </label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Tournament End</label>
                       <input
                         type="datetime-local"
                         className="input"
@@ -358,6 +398,7 @@ export default function NewTournamentPage() {
                       value={form.totalMatches}
                       onChange={(e) => set("totalMatches", e.target.value)}
                       min="1"
+                      required
                     />
                     <Input
                       label="Matches per Day"
@@ -365,16 +406,11 @@ export default function NewTournamentPage() {
                       value={form.matchesPerDay}
                       onChange={(e) => set("matchesPerDay", e.target.value)}
                       min="1"
+                      required
                     />
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Status
-                      </label>
-                      <select 
-                        className="input"
-                        value={form.status}
-                        onChange={(e) => set("status", e.target.value)}
-                      >
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Status</label>
+                      <select className="input" value={form.status} onChange={(e) => set("status", e.target.value)}>
                         <option value="draft">Draft</option>
                         <option value="upcoming">Upcoming</option>
                         <option value="registration_open">Registration Open</option>
@@ -389,7 +425,7 @@ export default function NewTournamentPage() {
               </div>
             )}
 
-            {/* Pricing Section */}
+            {/* PRICING */}
             {activeSection === "pricing" && (
               <div className="space-y-6">
                 <Card className="p-6">
@@ -399,7 +435,7 @@ export default function NewTournamentPage() {
                     </div>
                     <div>
                       <h3 className="text-lg font-bold text-slate-800">Pricing & Prize Pool</h3>
-                      <p className="text-slate-600 text-sm">Configure entry fees and prize distribution</p>
+                      <p className="text-slate-600 text-sm">Configure service fee and prize pool</p>
                     </div>
                   </div>
 
@@ -420,7 +456,7 @@ export default function NewTournamentPage() {
                       {form.isFree && (
                         <div className="flex items-center gap-2 px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
                           <FiCheck className="w-3 h-3" />
-                          No entry fee required
+                          No service fee required
                         </div>
                       )}
                     </div>
@@ -444,9 +480,7 @@ export default function NewTournamentPage() {
                       icon={<GiTrophy className="w-4 h-4" />}
                     />
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Fee Type
-                      </label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Fee Type</label>
                       <div className="input bg-slate-50 text-slate-500">
                         {form.isFree ? "Free Entry" : "Paid Entry"}
                       </div>
@@ -455,29 +489,19 @@ export default function NewTournamentPage() {
 
                   <div className="mt-6">
                     <div className="flex items-center justify-between mb-3">
-                      <label className="text-sm font-medium text-slate-700">
-                        Featured Images (Optional)
-                      </label>
-                      <span className="text-xs text-slate-500">Recommended size: 1200x400</span>
+                      <label className="text-sm font-medium text-slate-700">Featured Images (Optional)</label>
+                      <span className="text-xs text-slate-500">Recommended: 1200x400</span>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <Input
-                        placeholder="Banner Image URL"
-                        value={form.bannerImage}
-                        onChange={(e) => set("bannerImage", e.target.value)}
-                      />
-                      <Input
-                        placeholder="Featured Image URL"
-                        value={form.featuredImage}
-                        onChange={(e) => set("featuredImage", e.target.value)}
-                      />
+                      <Input placeholder="Banner Image URL" value={form.bannerImage} onChange={(e) => set("bannerImage", e.target.value)} />
+                      <Input placeholder="Featured Image URL" value={form.featuredImage} onChange={(e) => set("featuredImage", e.target.value)} />
                     </div>
                   </div>
                 </Card>
               </div>
             )}
 
-            {/* Settings Section */}
+            {/* SETTINGS */}
             {activeSection === "settings" && (
               <div className="space-y-6">
                 <Card className="p-6">
@@ -492,20 +516,8 @@ export default function NewTournamentPage() {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <Input
-                      label="Total Matches"
-                      type="number"
-                      value={form.totalMatches}
-                      onChange={(e) => set("totalMatches", e.target.value)}
-                      min="1"
-                    />
-                    <Input
-                      label="Matches per Day"
-                      type="number"
-                      value={form.matchesPerDay}
-                      onChange={(e) => set("matchesPerDay", e.target.value)}
-                      min="1"
-                    />
+                    <Input label="Total Matches" type="number" value={form.totalMatches} onChange={(e) => set("totalMatches", e.target.value)} min="1" />
+                    <Input label="Matches per Day" type="number" value={form.matchesPerDay} onChange={(e) => set("matchesPerDay", e.target.value)} min="1" />
                     <Input
                       label="Kill Points"
                       type="number"
@@ -520,29 +532,34 @@ export default function NewTournamentPage() {
                   <div className="mt-6">
                     <div className="flex items-center gap-3 mb-3">
                       <GiCrossedSwords className="w-5 h-5 text-slate-600" />
-                      <label className="text-sm font-medium text-slate-700">
-                        Placement Points Configuration
-                      </label>
+                      <label className="text-sm font-medium text-slate-700">Placement Points Configuration</label>
                     </div>
+
                     <textarea
                       className="input font-mono text-sm"
                       rows={10}
                       value={JSON.stringify(form.placementPoints, null, 2)}
                       onChange={(e) => {
                         try {
+                          setJsonError(null);
                           set("placementPoints", JSON.parse(e.target.value));
-                        } catch {}
+                        } catch {
+                          setJsonError("Invalid JSON in placement points.");
+                        }
                       }}
                     />
+
+                    {jsonError && <div className="mt-2 text-xs text-red-600">{jsonError}</div>}
+
                     <div className="text-xs text-slate-500 mt-2">
-                      Edit the JSON array to modify placement points. Format: [{"{"}"placement": 1, "points": 15{"}"}]
+                      Format: [{"{"}"placement": 1, "points": 15{"}"}]
                     </div>
                   </div>
                 </Card>
               </div>
             )}
 
-            {/* Scoring Section */}
+            {/* SCORING */}
             {activeSection === "scoring" && (
               <div className="space-y-6">
                 <Card className="p-6">
@@ -562,6 +579,7 @@ export default function NewTournamentPage() {
                         <GiTargetPrize className="w-5 h-5 text-blue-600" />
                         <h4 className="font-semibold text-slate-800">Kill Points</h4>
                       </div>
+
                       <Input
                         label="Points per Kill"
                         type="number"
@@ -570,8 +588,9 @@ export default function NewTournamentPage() {
                         min="0"
                         step="0.5"
                       />
+
                       <div className="text-xs text-slate-600 mt-2">
-                        Each kill awards {form.killPoints} point{form.killPoints !== 1 ? 's' : ''}
+                        Each kill awards {Number(form.killPoints || 0)} points
                       </div>
                     </div>
 
@@ -580,22 +599,17 @@ export default function NewTournamentPage() {
                         <GiRank3 className="w-5 h-5 text-green-600" />
                         <h4 className="font-semibold text-slate-800">Placement Points</h4>
                       </div>
-                      <div className="text-sm text-slate-600">
-                        Current configuration for top 8 placements
-                      </div>
+
+                      <div className="text-sm text-slate-600">Current configuration</div>
+
                       <div className="mt-3 max-h-40 overflow-y-auto">
-                        {form.placementPoints.map((item, idx) => (
+                        {(form.placementPoints || []).map((item, idx) => (
                           <div key={idx} className="flex items-center justify-between p-2 border-b border-slate-200 last:border-0">
                             <div className="flex items-center gap-2">
                               <div className="h-6 w-6 rounded bg-slate-100 flex items-center justify-center text-xs font-bold">
                                 #{item.placement}
                               </div>
-                              <span className="text-sm text-slate-700">
-                                {item.placement === 1 ? '1st Place' : 
-                                 item.placement === 2 ? '2nd Place' : 
-                                 item.placement === 3 ? '3rd Place' : 
-                                 `${item.placement}th Place`}
-                              </span>
+                              <span className="text-sm text-slate-700">{item.placement} Place</span>
                             </div>
                             <span className="font-bold text-green-600">{item.points} pts</span>
                           </div>
@@ -603,20 +617,11 @@ export default function NewTournamentPage() {
                       </div>
                     </div>
                   </div>
-
-                  <div className="mt-6">
-                    <div className="text-sm font-medium text-slate-700 mb-2">
-                      Quick Calculation Example
-                    </div>
-                    <div className="p-4 bg-slate-50 rounded-lg text-sm text-slate-600">
-                      A player with 5 kills and 2nd place would get: (5 × {form.killPoints}) + {form.placementPoints.find(p => p.placement === 2)?.points || 12} = {5 * form.killPoints + (form.placementPoints.find(p => p.placement === 2)?.points || 12)} points
-                    </div>
-                  </div>
                 </Card>
               </div>
             )}
 
-            {/* Advanced Section */}
+            {/* ADVANCED */}
             {activeSection === "advanced" && (
               <div className="space-y-6">
                 <Card className="p-6">
@@ -626,7 +631,7 @@ export default function NewTournamentPage() {
                     </div>
                     <div>
                       <h3 className="text-lg font-bold text-slate-800">Advanced Settings</h3>
-                      <p className="text-slate-600 text-sm">Room details and additional configurations</p>
+                      <p className="text-slate-600 text-sm">Room details and additional configs</p>
                     </div>
                   </div>
 
@@ -636,14 +641,14 @@ export default function NewTournamentPage() {
                       value={form.roomId}
                       onChange={(e) => set("roomId", e.target.value)}
                       placeholder="Enter custom room ID"
-                      helperText="Custom room ID for tournament matches"
+                      helperText="Visible only to paid participants (Room page)."
                     />
                     <Input
                       label="Room Password"
                       value={form.roomPassword}
                       onChange={(e) => set("roomPassword", e.target.value)}
                       placeholder="Enter room password"
-                      helperText="Password for room access"
+                      helperText="Visible only to paid participants (Room page)."
                       type="password"
                     />
                   </div>
@@ -651,13 +656,11 @@ export default function NewTournamentPage() {
                   <div className="mt-6">
                     <div className="flex items-center gap-2 mb-3">
                       <FiEye className="w-4 h-4 text-slate-600" />
-                      <label className="text-sm font-medium text-slate-700">
-                        Additional Configuration
-                      </label>
+                      <label className="text-sm font-medium text-slate-700">Additional Configuration</label>
                     </div>
                     <div className="p-4 bg-gradient-to-br from-slate-50 to-slate-100 rounded-lg">
                       <div className="text-sm text-slate-600">
-                        These settings are optional. You can configure them after tournament creation.
+                        You can create the tournament now and update any optional fields later from Edit page.
                       </div>
                     </div>
                   </div>
@@ -669,31 +672,38 @@ export default function NewTournamentPage() {
             <div className="mt-6 pt-6 border-t border-slate-200">
               <div className="flex items-center justify-between">
                 <div className="text-sm text-slate-600">
-                  Fill all required fields and click "Create Tournament"
+                  Fill required fields and click "Create Tournament"
                 </div>
                 <div className="flex gap-3">
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     type="button"
                     onClick={() => {
-                      const sectionIndex = sections.findIndex(s => s.id === activeSection);
+                      const sectionIndex = sections.findIndex((s) => s.id === activeSection);
                       if (sectionIndex > 0) setActiveSection(sections[sectionIndex - 1].id);
                     }}
                     disabled={activeSection === "basic"}
                   >
                     Previous
                   </Button>
-                  <Button 
+
+                  <Button
                     type="button"
                     onClick={() => {
-                      const sectionIndex = sections.findIndex(s => s.id === activeSection);
+                      const sectionIndex = sections.findIndex((s) => s.id === activeSection);
                       if (sectionIndex < sections.length - 1) setActiveSection(sections[sectionIndex + 1].id);
                     }}
                     disabled={activeSection === "advanced"}
                   >
                     Next
                   </Button>
-                  <Button type="submit" loading={loading} className="bg-gradient-to-r from-green-500 to-emerald-500">
+
+                  <Button
+                    type="button"
+                    onClick={handleSubmit}
+                    loading={loading}
+                    className="bg-gradient-to-r from-green-500 to-emerald-500"
+                  >
                     <FiSave className="w-4 h-4 mr-2" />
                     {loading ? "Creating..." : "Create Tournament"}
                   </Button>

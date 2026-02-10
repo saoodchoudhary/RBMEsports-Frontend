@@ -1,40 +1,64 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import { useRouter } from "next/navigation";
-import { 
-  FiSave, 
-  FiUsers, 
-  FiAward, 
+import {
+  FiSave,
+  FiUsers,
+  FiAward,
   FiBarChart2,
   FiSettings,
   FiCalendar,
   FiDollarSign,
   FiEye,
   FiLock,
-  FiEdit2,
   FiArrowLeft
 } from "react-icons/fi";
-import { 
-  GiTrophy,
-  GiCrossedSwords,
-  GiRank3,
-  GiTeamIdea
-} from "react-icons/gi";
-import { MdOutlineEmojiEvents, MdOutlineSecurity } from "react-icons/md";
+import { GiTrophy, GiTeamIdea } from "react-icons/gi";
+import { MdOutlineSecurity } from "react-icons/md";
 import { BsFillPeopleFill } from "react-icons/bs";
 
+const defaultPlacementPoints = [
+  { placement: 1, points: 15 },
+  { placement: 2, points: 12 },
+  { placement: 3, points: 10 },
+  { placement: 4, points: 8 },
+  { placement: 5, points: 6 },
+  { placement: 6, points: 4 },
+  { placement: 7, points: 2 },
+  { placement: 8, points: 1 }
+];
+
+// Convert ISO date -> datetime-local string WITHOUT timezone shifting logic changes:
+// We want to show the stored date in local inputs safely.
+// NOTE: if backend stores UTC, this shows local time equivalent.
+function toDatetimeLocal(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function toISOFromDatetimeLocal(v) {
+  if (!v) return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
 export default function EditTournamentPage({ params }) {
-  const { id } = React.use(params);
+  const {id} = React.use(params);
   const router = useRouter();
 
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState(null);
   const [activeTab, setActiveTab] = useState("basic");
+  const [jsonError, setJsonError] = useState(null);
 
   function set(key, value) {
     setForm((p) => ({ ...p, [key]: value }));
@@ -42,6 +66,7 @@ export default function EditTournamentPage({ params }) {
 
   useEffect(() => {
     if (!id) return;
+
     (async () => {
       setLoading(true);
       try {
@@ -67,17 +92,51 @@ export default function EditTournamentPage({ params }) {
       return;
     }
 
+    // Validate placementPoints JSON (if edited)
+    if (!Array.isArray(form.placementPoints)) {
+      alert("Placement points must be a valid JSON array.");
+      return;
+    }
+
     setLoading(true);
     try {
       const payload = {
-        ...form,
+        // Only send fields that matter; safer than spreading entire form
+        title: form.title,
+        description: form.description,
+
+        tournamentType: form.tournamentType,
         teamSize: Number(form.teamSize),
         maxParticipants: Number(form.maxParticipants),
-        serviceFee: Number(form.serviceFee),
-        prizePool: Number(form.prizePool),
-        killPoints: Number(form.killPoints),
-        totalMatches: Number(form.totalMatches),
-        matchesPerDay: Number(form.matchesPerDay)
+
+        registrationStartDate: toISOFromDatetimeLocal(form.registrationStartDate) || form.registrationStartDate,
+        registrationEndDate: toISOFromDatetimeLocal(form.registrationEndDate) || form.registrationEndDate,
+        tournamentStartDate: toISOFromDatetimeLocal(form.tournamentStartDate) || form.tournamentStartDate,
+        tournamentEndDate: toISOFromDatetimeLocal(form.tournamentEndDate) || form.tournamentEndDate,
+
+        isFree: Boolean(form.isFree),
+        serviceFee: Number(form.isFree ? 0 : form.serviceFee || 0),
+
+        prizePool: Number(form.prizePool || 0),
+
+        killPoints: Number(form.killPoints || 0),
+        placementPoints: form.placementPoints,
+
+        totalMatches: Number(form.totalMatches || 1),
+        matchesPerDay: Number(form.matchesPerDay || 1),
+
+        map: form.map,
+        perspective: form.perspective,
+
+        status: form.status,
+
+        bannerImage: form.bannerImage || "",
+        featuredImage: form.featuredImage || "",
+
+        discordLink: form.discordLink || "",
+
+        roomId: form.roomId || "",
+        roomPassword: form.roomPassword || ""
       };
 
       await api.adminUpdateTournament(id, payload);
@@ -98,15 +157,37 @@ export default function EditTournamentPage({ params }) {
     { id: "advanced", label: "Advanced", icon: <MdOutlineSecurity className="w-4 h-4" /> }
   ];
 
+  const getTypeIcon = () => {
+    switch (form?.tournamentType) {
+      case "solo": return <BsFillPeopleFill className="w-5 h-5" />;
+      case "duo": return <GiTeamIdea className="w-5 h-5" />;
+      case "squad": return <GiTeamIdea className="w-5 h-5" />;
+      default: return <GiTrophy className="w-5 h-5" />;
+    }
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case "registration_open": return "bg-green-100 text-green-800";
+      case "ongoing": return "bg-amber-100 text-amber-800";
+      case "completed": return "bg-blue-100 text-blue-800";
+      case "cancelled": return "bg-red-100 text-red-800";
+      case "upcoming": return "bg-cyan-100 text-cyan-800";
+      case "registration_closed": return "bg-slate-200 text-slate-800";
+      default: return "bg-slate-100 text-slate-800";
+    }
+  };
+
+  // Derived preview values (safe)
+  const prizePoolText = useMemo(() => `₹${Number(form?.prizePool || 0).toLocaleString()}`, [form?.prizePool]);
+
   if (!id) {
     return (
       <div className="card p-8 text-center">
         <div className="text-red-500 text-xl mb-3">⚠️</div>
         <div className="text-lg font-bold text-slate-800 mb-2">Invalid Tournament</div>
         <div className="text-slate-600 mb-4">Tournament ID is missing</div>
-        <Button onClick={() => router.push("/admin/tournaments")}>
-          Back to Tournaments
-        </Button>
+        <Button onClick={() => router.push("/admin/tournaments")}>Back to Tournaments</Button>
       </div>
     );
   }
@@ -116,7 +197,7 @@ export default function EditTournamentPage({ params }) {
       <div className="space-y-6">
         <div className="h-10 skeleton rounded-lg w-64"></div>
         <div className="grid grid-cols-5 gap-2">
-          {[1,2,3,4,5].map(i => <div key={i} className="h-12 skeleton rounded-lg"></div>)}
+          {[1, 2, 3, 4, 5].map((i) => <div key={i} className="h-12 skeleton rounded-lg"></div>)}
         </div>
         <div className="h-64 skeleton rounded-xl"></div>
       </div>
@@ -129,34 +210,10 @@ export default function EditTournamentPage({ params }) {
         <div className="text-4xl mb-4">🎮</div>
         <div className="text-lg font-bold text-slate-800 mb-2">Tournament Not Found</div>
         <div className="text-slate-600 mb-4">The requested tournament could not be loaded</div>
-        <Button onClick={() => router.push("/admin/tournaments")}>
-          Back to Tournaments
-        </Button>
+        <Button onClick={() => router.push("/admin/tournaments")}>Back to Tournaments</Button>
       </div>
     );
   }
-
-  // Tournament type icon
-  const getTypeIcon = () => {
-    switch(form.tournamentType) {
-      case 'solo': return <BsFillPeopleFill className="w-5 h-5" />;
-      case 'duo': return <GiTeamIdea className="w-5 h-5" />;
-      case 'squad': return <GiTeamIdea className="w-5 h-5" />;
-      default: return <GiTrophy className="w-5 h-5" />;
-    }
-  };
-
-  // Status badge color
-  const getStatusColor = (status) => {
-    switch(status) {
-      case 'registration_open': return 'bg-green-100 text-green-800';
-      case 'ongoing': return 'bg-amber-100 text-amber-800';
-      case 'completed': return 'bg-blue-100 text-blue-800';
-      case 'cancelled': return 'bg-red-100 text-red-800';
-      case 'upcoming': return 'bg-cyan-100 text-cyan-800';
-      default: return 'bg-slate-100 text-slate-800';
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -167,6 +224,7 @@ export default function EditTournamentPage({ params }) {
             <Button
               variant="ghost"
               size="sm"
+              type="button"
               onClick={() => router.push("/admin/tournaments")}
               className="flex items-center gap-2"
             >
@@ -175,7 +233,7 @@ export default function EditTournamentPage({ params }) {
             </Button>
             <div className="h-6 w-px bg-slate-300"></div>
             <div className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(form.status)}`}>
-              {form.status.replace('_', ' ').toUpperCase()}
+              {String(form.status || "").replace("_", " ").toUpperCase()}
             </div>
           </div>
           <h1 className="text-2xl font-bold text-slate-800">Edit Tournament</h1>
@@ -183,24 +241,15 @@ export default function EditTournamentPage({ params }) {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <a 
-            href={`/admin/tournaments/${id}/participants`}
-            className="btn btn-outline flex items-center gap-2"
-          >
+          <a href={`/admin/tournaments/${id}/participants`} className="btn btn-outline flex items-center gap-2">
             <FiUsers className="w-4 h-4" />
             Participants
           </a>
-          <a 
-            href={`/admin/tournaments/${id}/results`}
-            className="btn btn-outline flex items-center gap-2"
-          >
+          <a href={`/admin/tournaments/${id}/results`} className="btn btn-outline flex items-center gap-2">
             <FiBarChart2 className="w-4 h-4" />
             Results
           </a>
-          <a 
-            href={`/admin/tournaments/${id}/winners`}
-            className="btn btn-outline flex items-center gap-2"
-          >
+          <a href={`/admin/tournaments/${id}/winners`} className="btn btn-outline flex items-center gap-2">
             <FiAward className="w-4 h-4" />
             Winners
           </a>
@@ -216,11 +265,11 @@ export default function EditTournamentPage({ params }) {
             </div>
             <div>
               <div className="text-sm text-slate-600">Type</div>
-              <div className="font-bold text-slate-800">{form.tournamentType.toUpperCase()}</div>
+              <div className="font-bold text-slate-800">{String(form.tournamentType || "").toUpperCase()}</div>
             </div>
           </div>
         </Card>
-        
+
         <Card className="p-4">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-green-100 to-green-50 flex items-center justify-center">
@@ -228,11 +277,11 @@ export default function EditTournamentPage({ params }) {
             </div>
             <div>
               <div className="text-sm text-slate-600">Prize Pool</div>
-              <div className="font-bold text-green-600">₹{form.prizePool.toLocaleString()}</div>
+              <div className="font-bold text-green-600">{prizePoolText}</div>
             </div>
           </div>
         </Card>
-        
+
         <Card className="p-4">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-amber-100 to-amber-50 flex items-center justify-center">
@@ -240,20 +289,22 @@ export default function EditTournamentPage({ params }) {
             </div>
             <div>
               <div className="text-sm text-slate-600">Participants</div>
-              <div className="font-bold text-slate-800">{form.currentParticipants || 0}/{form.maxParticipants}</div>
+              <div className="font-bold text-slate-800">
+                {Number(form.currentParticipants || 0)}/{Number(form.maxParticipants || 0)}
+              </div>
             </div>
           </div>
         </Card>
-        
+
         <Card className="p-4">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-purple-100 to-purple-50 flex items-center justify-center">
               <FiDollarSign className="w-5 h-5 text-purple-600" />
             </div>
             <div>
-              <div className="text-sm text-slate-600">Entry Fee</div>
+              <div className="text-sm text-slate-600">Service Fee</div>
               <div className="font-bold text-slate-800">
-                {form.isFree ? 'FREE' : `₹${form.serviceFee}`}
+                {form.isFree ? "FREE" : `₹${Number(form.serviceFee || 0)}`}
               </div>
             </div>
           </div>
@@ -267,6 +318,7 @@ export default function EditTournamentPage({ params }) {
             {tabs.map((tab) => (
               <button
                 key={tab.id}
+                type="button"
                 onClick={() => setActiveTab(tab.id)}
                 className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-colors ${
                   activeTab === tab.id
@@ -289,7 +341,7 @@ export default function EditTournamentPage({ params }) {
               {id}
             </div>
             <div className="mt-3 text-xs text-slate-500">
-              Created: {new Date(form.createdAt).toLocaleDateString()}
+              Created: {form.createdAt ? new Date(form.createdAt).toLocaleDateString() : "—"}
             </div>
           </div>
         </Card>
@@ -298,7 +350,7 @@ export default function EditTournamentPage({ params }) {
         <div className="lg:col-span-3">
           <form onSubmit={save}>
             <Card className="p-6">
-              {/* Basic Info Tab */}
+              {/* BASIC */}
               {activeTab === "basic" && (
                 <div className="space-y-6">
                   <div className="flex items-center gap-3 mb-4">
@@ -307,26 +359,15 @@ export default function EditTournamentPage({ params }) {
                     </div>
                     <div>
                       <h3 className="text-lg font-bold text-slate-800">Basic Information</h3>
-                      <p className="text-slate-600 text-sm">Edit tournament title, description and type</p>
+                      <p className="text-slate-600 text-sm">Edit tournament title and description</p>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Input
-                      label="Tournament Title"
-                      value={form.title || ""}
-                      onChange={(e) => set("title", e.target.value)}
-                      required
-                    />
+                    <Input label="Tournament Title" value={form.title || ""} onChange={(e) => set("title", e.target.value)} required />
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Status
-                      </label>
-                      <select 
-                        className="input"
-                        value={form.status || "draft"}
-                        onChange={(e) => set("status", e.target.value)}
-                      >
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Status</label>
+                      <select className="input" value={form.status || "draft"} onChange={(e) => set("status", e.target.value)}>
                         <option value="draft">Draft</option>
                         <option value="upcoming">Upcoming</option>
                         <option value="registration_open">Registration Open</option>
@@ -346,38 +387,22 @@ export default function EditTournamentPage({ params }) {
                       multiline
                       rows={6}
                       helperText="Detailed description for participants"
+                      required
                     />
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Tournament Type
-                      </label>
-                      <div className="input bg-slate-50">
-                        {form.tournamentType.toUpperCase()}
-                      </div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Tournament Type</label>
+                      <div className="input bg-slate-50">{String(form.tournamentType || "").toUpperCase()}</div>
                     </div>
-                    <Input
-                      label="Team Size"
-                      type="number"
-                      value={form.teamSize || 4}
-                      onChange={(e) => set("teamSize", e.target.value)}
-                      min="1"
-                      max="4"
-                    />
-                    <Input
-                      label="Max Participants"
-                      type="number"
-                      value={form.maxParticipants || 25}
-                      onChange={(e) => set("maxParticipants", e.target.value)}
-                      min="1"
-                    />
+                    <Input label="Team Size" type="number" value={form.teamSize || 4} onChange={(e) => set("teamSize", e.target.value)} min="1" max="4" />
+                    <Input label="Max Participants" type="number" value={form.maxParticipants || 25} onChange={(e) => set("maxParticipants", e.target.value)} min="1" />
                   </div>
                 </div>
               )}
 
-              {/* Pricing Tab */}
+              {/* PRICING */}
               {activeTab === "pricing" && (
                 <div className="space-y-6">
                   <div className="flex items-center gap-3 mb-4">
@@ -386,7 +411,7 @@ export default function EditTournamentPage({ params }) {
                     </div>
                     <div>
                       <h3 className="text-lg font-bold text-slate-800">Pricing & Prize</h3>
-                      <p className="text-slate-600 text-sm">Update entry fees and prize pool</p>
+                      <p className="text-slate-600 text-sm">Update service fee and prize pool</p>
                     </div>
                   </div>
 
@@ -396,7 +421,7 @@ export default function EditTournamentPage({ params }) {
                         <input
                           type="checkbox"
                           id="isFree"
-                          checked={form.isFree || false}
+                          checked={!!form.isFree}
                           onChange={(e) => set("isFree", e.target.checked)}
                           className="h-4 w-4 rounded border-slate-300"
                         />
@@ -406,7 +431,7 @@ export default function EditTournamentPage({ params }) {
                       </div>
                       {form.isFree && (
                         <div className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
-                          No entry fee required
+                          No service fee required
                         </div>
                       )}
                     </div>
@@ -416,9 +441,9 @@ export default function EditTournamentPage({ params }) {
                     <Input
                       label="Service Fee (₹)"
                       type="number"
-                      value={form.serviceFee || 0}
+                      value={form.isFree ? 0 : (form.serviceFee || 0)}
                       onChange={(e) => set("serviceFee", e.target.value)}
-                      disabled={form.isFree}
+                      disabled={!!form.isFree}
                       min="0"
                     />
                     <Input
@@ -432,30 +457,18 @@ export default function EditTournamentPage({ params }) {
 
                   <div className="mt-6">
                     <div className="flex items-center justify-between mb-3">
-                      <label className="text-sm font-medium text-slate-700">
-                        Featured Images
-                      </label>
+                      <label className="text-sm font-medium text-slate-700">Featured Images</label>
                       <span className="text-xs text-slate-500">Optional</span>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <Input
-                        label="Banner Image URL"
-                        value={form.bannerImage || ""}
-                        onChange={(e) => set("bannerImage", e.target.value)}
-                        placeholder="https://example.com/banner.jpg"
-                      />
-                      <Input
-                        label="Featured Image URL"
-                        value={form.featuredImage || ""}
-                        onChange={(e) => set("featuredImage", e.target.value)}
-                        placeholder="https://example.com/featured.jpg"
-                      />
+                      <Input label="Banner Image URL" value={form.bannerImage || ""} onChange={(e) => set("bannerImage", e.target.value)} />
+                      <Input label="Featured Image URL" value={form.featuredImage || ""} onChange={(e) => set("featuredImage", e.target.value)} />
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Schedule Tab */}
+              {/* SCHEDULE */}
               {activeTab === "schedule" && (
                 <div className="space-y-6">
                   <div className="flex items-center gap-3 mb-4">
@@ -470,49 +483,41 @@ export default function EditTournamentPage({ params }) {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Registration Start
-                      </label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Registration Start</label>
                       <input
                         type="datetime-local"
                         className="input"
-                        value={form.registrationStartDate ? new Date(form.registrationStartDate).toISOString().slice(0, 16) : ""}
+                        value={toDatetimeLocal(form.registrationStartDate)}
                         onChange={(e) => set("registrationStartDate", e.target.value)}
                         required
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Registration End
-                      </label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Registration End</label>
                       <input
                         type="datetime-local"
                         className="input"
-                        value={form.registrationEndDate ? new Date(form.registrationEndDate).toISOString().slice(0, 16) : ""}
+                        value={toDatetimeLocal(form.registrationEndDate)}
                         onChange={(e) => set("registrationEndDate", e.target.value)}
                         required
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Tournament Start
-                      </label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Tournament Start</label>
                       <input
                         type="datetime-local"
                         className="input"
-                        value={form.tournamentStartDate ? new Date(form.tournamentStartDate).toISOString().slice(0, 16) : ""}
+                        value={toDatetimeLocal(form.tournamentStartDate)}
                         onChange={(e) => set("tournamentStartDate", e.target.value)}
                         required
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Tournament End
-                      </label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Tournament End</label>
                       <input
                         type="datetime-local"
                         className="input"
-                        value={form.tournamentEndDate ? new Date(form.tournamentEndDate).toISOString().slice(0, 16) : ""}
+                        value={toDatetimeLocal(form.tournamentEndDate)}
                         onChange={(e) => set("tournamentEndDate", e.target.value)}
                         required
                       />
@@ -520,33 +525,14 @@ export default function EditTournamentPage({ params }) {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <Input
-                      label="Total Matches"
-                      type="number"
-                      value={form.totalMatches || 1}
-                      onChange={(e) => set("totalMatches", e.target.value)}
-                      min="1"
-                    />
-                    <Input
-                      label="Matches per Day"
-                      type="number"
-                      value={form.matchesPerDay || 1}
-                      onChange={(e) => set("matchesPerDay", e.target.value)}
-                      min="1"
-                    />
-                    <Input
-                      label="Kill Points"
-                      type="number"
-                      value={form.killPoints || 1}
-                      onChange={(e) => set("killPoints", e.target.value)}
-                      min="0"
-                      step="0.5"
-                    />
+                    <Input label="Total Matches" type="number" value={form.totalMatches || 1} onChange={(e) => set("totalMatches", e.target.value)} min="1" />
+                    <Input label="Matches per Day" type="number" value={form.matchesPerDay || 1} onChange={(e) => set("matchesPerDay", e.target.value)} min="1" />
+                    <Input label="Kill Points" type="number" value={form.killPoints || 1} onChange={(e) => set("killPoints", e.target.value)} min="0" step="0.5" />
                   </div>
                 </div>
               )}
 
-              {/* Room Details Tab */}
+              {/* ROOM */}
               {activeTab === "room" && (
                 <div className="space-y-6">
                   <div className="flex items-center gap-3 mb-4">
@@ -565,14 +551,14 @@ export default function EditTournamentPage({ params }) {
                       value={form.roomId || ""}
                       onChange={(e) => set("roomId", e.target.value)}
                       placeholder="Enter custom room ID"
-                      helperText="Custom room ID for tournament matches"
+                      helperText="Visible only to paid participants via Room page."
                     />
                     <Input
                       label="Room Password"
                       value={form.roomPassword || ""}
                       onChange={(e) => set("roomPassword", e.target.value)}
                       placeholder="Enter room password"
-                      helperText="Password for room access"
+                      helperText="Visible only to paid participants via Room page."
                       type="password"
                     />
                   </div>
@@ -583,7 +569,7 @@ export default function EditTournamentPage({ params }) {
                       <div>
                         <div className="font-medium text-slate-800">Visibility Note</div>
                         <div className="text-sm text-slate-600 mt-1">
-                          Room details are only visible to registered participants after payment confirmation.
+                          Room details are visible only to users who are registered and payment status is <b>paid</b> (or admin).
                         </div>
                       </div>
                     </div>
@@ -591,7 +577,7 @@ export default function EditTournamentPage({ params }) {
                 </div>
               )}
 
-              {/* Advanced Tab */}
+              {/* ADVANCED */}
               {activeTab === "advanced" && (
                 <div className="space-y-6">
                   <div className="flex items-center gap-3 mb-4">
@@ -600,38 +586,22 @@ export default function EditTournamentPage({ params }) {
                     </div>
                     <div>
                       <h3 className="text-lg font-bold text-slate-800">Advanced Settings</h3>
-                      <p className="text-slate-600 text-sm">Additional tournament configurations</p>
+                      <p className="text-slate-600 text-sm">Map, perspective, scoring, and links</p>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Map
-                      </label>
-                      <select 
-                        className="input"
-                        value={form.map || "Erangel"}
-                        onChange={(e) => set("map", e.target.value)}
-                      >
-                        <option value="Erangel">Erangel</option>
-                        <option value="Miramar">Miramar</option>
-                        <option value="Sanhok">Sanhok</option>
-                        <option value="Vikendi">Vikendi</option>
-                        <option value="Livik">Livik</option>
-                        <option value="Karakin">Karakin</option>
-                        <option value="Deston">Deston</option>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Map</label>
+                      <select className="input" value={form.map || "Erangel"} onChange={(e) => set("map", e.target.value)}>
+                        {["Erangel","Miramar","Sanhok","Vikendi","Livik","Karakin","Deston"].map((m) => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                        Perspective
-                      </label>
-                      <select 
-                        className="input"
-                        value={form.perspective || "TPP"}
-                        onChange={(e) => set("perspective", e.target.value)}
-                      >
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Perspective</label>
+                      <select className="input" value={form.perspective || "TPP"} onChange={(e) => set("perspective", e.target.value)}>
                         <option value="TPP">TPP</option>
                         <option value="FPP">FPP</option>
                       </select>
@@ -640,10 +610,7 @@ export default function EditTournamentPage({ params }) {
 
                   <div className="mt-6">
                     <div className="flex items-center gap-2 mb-3">
-                      <GiCrossedSwords className="w-4 h-4 text-slate-600" />
-                      <label className="text-sm font-medium text-slate-700">
-                        Placement Points Configuration
-                      </label>
+                      <label className="text-sm font-medium text-slate-700">Placement Points Configuration</label>
                     </div>
                     <textarea
                       className="input font-mono text-sm"
@@ -651,13 +618,15 @@ export default function EditTournamentPage({ params }) {
                       value={JSON.stringify(form.placementPoints || defaultPlacementPoints, null, 2)}
                       onChange={(e) => {
                         try {
+                          setJsonError(null);
                           set("placementPoints", JSON.parse(e.target.value));
-                        } catch {}
+                        } catch {
+                          setJsonError("Invalid JSON");
+                        }
                       }}
                     />
-                    <div className="text-xs text-slate-500 mt-2">
-                      Edit JSON array to modify placement points
-                    </div>
+                    {jsonError && <div className="text-xs text-red-600 mt-2">{jsonError}</div>}
+                    <div className="text-xs text-slate-500 mt-2">Edit JSON array to modify placement points</div>
                   </div>
 
                   <div className="mt-6">
@@ -672,17 +641,11 @@ export default function EditTournamentPage({ params }) {
                 </div>
               )}
 
-              {/* Save Button */}
+              {/* Save */}
               <div className="mt-8 pt-6 border-t border-slate-200">
                 <div className="flex items-center justify-between">
-                  <div className="text-sm text-slate-600">
-                    Make changes and save to update tournament
-                  </div>
-                  <Button 
-                    type="submit" 
-                    loading={loading}
-                    className="bg-gradient-to-r from-green-500 to-emerald-500"
-                  >
+                  <div className="text-sm text-slate-600">Make changes and save to update tournament</div>
+                  <Button type="submit" loading={loading} className="bg-gradient-to-r from-green-500 to-emerald-500">
                     <FiSave className="w-4 h-4 mr-2" />
                     {loading ? "Saving..." : "Save Changes"}
                   </Button>
@@ -695,15 +658,3 @@ export default function EditTournamentPage({ params }) {
     </div>
   );
 }
-
-// Add this constant at the top or bottom of file
-const defaultPlacementPoints = [
-  { placement: 1, points: 15 },
-  { placement: 2, points: 12 },
-  { placement: 3, points: 10 },
-  { placement: 4, points: 8 },
-  { placement: 5, points: 6 },
-  { placement: 6, points: 4 },
-  { placement: 7, points: 2 },
-  { placement: 8, points: 1 }
-];
