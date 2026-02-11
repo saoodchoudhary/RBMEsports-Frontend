@@ -526,7 +526,6 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
                   value={teamName}
                   onChange={(e) => setTeamName(e.target.value)}
                   placeholder="Enter your team name (e.g., RBM Warriors)"
-                  helperText="A unique name for your squad"
                 />
               )}
 

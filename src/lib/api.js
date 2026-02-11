@@ -1,10 +1,26 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
 
+const TOKEN_KEY = "rbm_token";
+
+export function setAuthToken(token) {
+  if (typeof window === "undefined") return;
+  if (!token) localStorage.removeItem(TOKEN_KEY);
+  else localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function getAuthToken() {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(TOKEN_KEY);
+}
+
 async function request(path, { method = "GET", body, headers } = {}) {
+  const token = getAuthToken();
+
   const res = await fetch(`${API_BASE}${path}`, {
     method,
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(headers || {})
     },
     credentials: "include",
