@@ -109,7 +109,7 @@ export default function RegisterClient() {
               </div>
               <h1 className="text-3xl font-extrabold text-slate-900">Create your account</h1>
               <p className="text-slate-600 mt-2">
-                Register on <span className="font-semibold">rbmesports.co</span> to join skill-based BGMI tournaments.
+                Register on <span className="font-semibold">rbmesports.vercel.app</span> to join skill-based BGMI tournaments.
               </p>
             </div>
 

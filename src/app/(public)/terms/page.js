@@ -39,7 +39,7 @@ export default function TermsPage() {
             1. Acceptance of Terms
           </h2>
           <p className="text-gray-700 leading-relaxed">
-            By registering on <strong className="text-gray-900">RBM ESports (rbmesports.co)</strong>, users agree to comply with all
+            By registering on <strong className="text-gray-900">RBM ESports (rbmesports.vercel.app/)</strong>, users agree to comply with all
             tournament rules, policies, and platform guidelines. Continued use of the platform constitutes
             acceptance of these terms.
           </p>

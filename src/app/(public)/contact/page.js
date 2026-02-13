@@ -4,7 +4,7 @@ import { GiTrophy } from "react-icons/gi";
 
 export const metadata = {
   title: "Contact Us | RBM ESports",
-  description: "Contact RBM ESports support (rbmesports.co)."
+  description: "Contact RBM ESports support (rbmesports.vercel.app)."
 };
 
 export default function ContactPage() {

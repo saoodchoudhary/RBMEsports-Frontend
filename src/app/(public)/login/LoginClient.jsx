@@ -247,7 +247,7 @@ export default function LoginClient() {
                   </Link>
                 </p>
                 <p className="text-xs text-slate-500 mt-2">
-                  rbmesports.co • Skill-based BGMI tournaments
+                  rbmesports.vercel.app • Skill-based BGMI tournaments
                 </p>
               </div>
             </div>
