@@ -5,10 +5,9 @@ import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import { api } from "@/lib/api";
-import { useSelector } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
 import { useRouter } from "next/navigation";
 import {
-  
   FiAward,
   FiTag,
   FiCreditCard,
@@ -20,7 +19,9 @@ import {
 } from "react-icons/fi";
 import { GiTeamIdea } from "react-icons/gi";
 import { BsFillPeopleFill } from "react-icons/bs";
-import { toast } from "@/store/uiSlice";
+
+// ✅ Use these (not toast(...) direct)
+import { showToast } from "@/store/uiSlice";
 
 function emptyMember() {
   return { bgmiId: "", inGameName: "" };
@@ -33,6 +34,7 @@ function safeNum(n, fallback = 0) {
 
 export default function JoinTournamentModal({ open, onClose, tournament }) {
   const router = useRouter();
+  const dispatch = useDispatch();
   const user = useSelector((s) => s.auth.user);
 
   const [activeTab, setActiveTab] = useState("details");
@@ -137,7 +139,12 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
     (tournament?.tournamentType === "squad" || tournament?.tournamentType === "duo") && {
       key: "teammates",
       label: tournament?.tournamentType === "duo" ? "Partner" : "Teammates",
-      icon: tournament?.tournamentType === "duo" ? <BsFillPeopleFill className="w-4 h-4" /> : <GiTeamIdea className="w-4 h-4" />
+      icon:
+        tournament?.tournamentType === "duo" ? (
+          <BsFillPeopleFill className="w-4 h-4" />
+        ) : (
+          <GiTeamIdea className="w-4 h-4" />
+        )
     },
     { key: "payment", label: "Payment", icon: <FiCreditCard className="w-4 h-4" /> }
   ].filter(Boolean);
@@ -145,13 +152,11 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
   const validateForm = () => {
     const errors = {};
 
-    // Backend validation requires partner fields for duo
     if (tournament?.tournamentType === "duo") {
       if (!partnerBgmiId.trim()) errors.partnerBgmiId = "Partner BGMI ID is required";
       if (!partnerInGameName.trim()) errors.partnerInGameName = "Partner In-Game Name is required";
     }
 
-    // Backend requires all members for squad (exact size)
     if (tournament?.tournamentType === "squad") {
       members.forEach((member, index) => {
         if (!member.bgmiId.trim()) errors[`member${index}BgmiId`] = `Teammate ${index + 1} BGMI ID required`;
@@ -159,7 +164,6 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
       });
     }
 
-    // user must have bgmiId + inGameName for backend (registerForTournament checks)
     if (!user?.bgmiId || !user?.inGameName) {
       errors.profile = "Please complete your profile (BGMI ID + In-Game Name) before registering.";
     }
@@ -180,17 +184,31 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
 
       if (res.success) {
         setCouponInfo(res.data);
-        toast({
-          title: "Coupon Applied!",
-          message: `₹${safeNum(res.data.discountAmount, 0)} discount applied`
-        });
+
+        dispatch(
+          showToast({
+            type: "success",
+            title: "Coupon Applied",
+            message: `₹${safeNum(res.data.discountAmount, 0)} discount applied`
+          })
+        );
+      } else {
+        dispatch(
+          showToast({
+            type: "error",
+            title: "Coupon Error",
+            message: res?.message || "Failed to apply coupon"
+          })
+        );
       }
     } catch (error) {
-      toast({
-        title: "Invalid Coupon",
-        message: error.message || "Please enter a valid coupon code",
-        type: "error"
-      });
+      dispatch(
+        showToast({
+          type: "error",
+          title: "Invalid Coupon",
+          message: error?.message || "Please enter a valid coupon code"
+        })
+      );
       setCouponInfo(null);
     } finally {
       setVerifyingCoupon(false);
@@ -199,18 +217,26 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
 
   async function registerNow() {
     if (!isRegistrationOpen) {
-      toast({ title: "Registration Closed", message: "Registration is not open for this tournament", type: "error" });
+      dispatch(
+        showToast({
+          type: "error",
+          title: "Registration Closed",
+          message: "Registration is not open for this tournament"
+        })
+      );
       return;
     }
 
     const errors = validateForm();
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
-      toast({
-        title: "Validation Error",
-        message: errors.profile || "Please fill all required fields",
-        type: "error"
-      });
+      dispatch(
+        showToast({
+          type: "error",
+          title: "Validation Error",
+          message: errors.profile || "Please fill all required fields"
+        })
+      );
       return;
     }
 
@@ -228,41 +254,60 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
           inGameName: m.inGameName.trim()
         }));
 
-        // Backend: POST /api/tournaments/:id/register-squad
         res = await api.registerSquad(tournament._id, {
           ...payloadBase,
           teamName: teamName?.trim() || undefined,
           members: cleanedMembers
         });
       } else if (tournament.tournamentType === "duo") {
-        // Backend: POST /api/tournaments/:id/register  (expects partnerBgmiId, partnerInGameName)
         res = await api.registerSoloDuo(tournament._id, {
           ...payloadBase,
           partnerBgmiId: partnerBgmiId.trim(),
           partnerInGameName: partnerInGameName.trim()
         });
       } else {
-        // Backend: POST /api/tournaments/:id/register
         res = await api.registerSoloDuo(tournament._id, payloadBase);
       }
 
       if (res.success) {
         onClose();
 
-        // Backend response returns payableAmount too; but we already compute payable in UI (after coupon check)
         if (payable === 0) {
           router.refresh();
-          toast({ title: "Registered Successfully!", message: "You have been registered for the tournament" });
+          dispatch(
+            showToast({
+              type: "success",
+              title: "Registered Successfully",
+              message: "You have been registered for the tournament"
+            })
+          );
         } else {
+          dispatch(
+            showToast({
+              type: "success",
+              title: "Registration Done",
+              message: "Redirecting to payment..."
+            })
+          );
           router.push("/payments");
         }
+      } else {
+        dispatch(
+          showToast({
+            type: "error",
+            title: "Registration Failed",
+            message: res?.message || "Please try again"
+          })
+        );
       }
     } catch (error) {
-      toast({
-        title: "Registration Failed",
-        message: error.message || "Please try again",
-        type: "error"
-      });
+      dispatch(
+        showToast({
+          type: "error",
+          title: "Registration Failed",
+          message: error?.message || "Please try again"
+        })
+      );
     } finally {
       setLoading(false);
     }
@@ -306,7 +351,9 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
             </div>
 
             <div className="mt-2 md:mt-0">
-              <div className="text-2xl font-bold text-blue-600">₹{safeNum(tournament.prizePool, 0).toLocaleString("en-IN")}</div>
+              <div className="text-2xl font-bold text-blue-600">
+                ₹{safeNum(tournament.prizePool, 0).toLocaleString("en-IN")}
+              </div>
               <div className="text-xs text-slate-600">Prize Pool</div>
             </div>
           </div>
@@ -338,7 +385,6 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
           {/* DETAILS */}
           {activeTab === "details" && (
             <>
-              {/* Profile required notice */}
               {formErrors.profile && (
                 <div className="p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-sm">
                   {formErrors.profile}
@@ -357,14 +403,19 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
                     <div className="flex justify-between items-center p-2 hover:bg-slate-50 rounded-lg">
                       <span className="text-slate-600">Date:</span>
                       <span className="font-medium">
-                        {tournament.tournamentStartDate ? new Date(tournament.tournamentStartDate).toLocaleDateString("en-IN") : "—"}
+                        {tournament.tournamentStartDate
+                          ? new Date(tournament.tournamentStartDate).toLocaleDateString("en-IN")
+                          : "—"}
                       </span>
                     </div>
                     <div className="flex justify-between items-center p-2 hover:bg-slate-50 rounded-lg">
                       <span className="text-slate-600">Time:</span>
                       <span className="font-medium">
                         {tournament.tournamentStartDate
-                          ? new Date(tournament.tournamentStartDate).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })
+                          ? new Date(tournament.tournamentStartDate).toLocaleTimeString("en-IN", {
+                              hour: "2-digit",
+                              minute: "2-digit"
+                            })
                           : "—"}
                       </span>
                     </div>
@@ -410,11 +461,14 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
                           style={{
                             width: `${
                               safeNum(tournament.maxParticipants, 0) > 0
-                                ? Math.min(100, (safeNum(tournament.currentParticipants, 0) / safeNum(tournament.maxParticipants, 0)) * 100)
+                                ? Math.min(
+                                    100,
+                                    (safeNum(tournament.currentParticipants, 0) / safeNum(tournament.maxParticipants, 0)) * 100
+                                  )
                                 : 0
                             }%`
                           }}
-                        ></div>
+                        />
                       </div>
                     </div>
                   </div>
@@ -466,7 +520,9 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
 
                         <div className="text-right">
                           <div className="text-sm text-green-600 line-through">₹{baseAmount}</div>
-                          <div className="text-xl font-bold text-green-700">₹{safeNum(couponInfo.finalAmount, baseAmount)}</div>
+                          <div className="text-xl font-bold text-green-700">
+                            ₹{safeNum(couponInfo.finalAmount, baseAmount)}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -547,7 +603,7 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
                       label="Partner BGMI ID"
                       value={partnerBgmiId}
                       onChange={(e) => setPartnerBgmiId(e.target.value)}
-                      placeholder="Enter partner's 10-12 digit BGMI ID"
+                      placeholder="Enter partner's BGMI ID"
                       error={formErrors.partnerBgmiId}
                       required
                     />
@@ -660,9 +716,7 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
                       <FiCheckCircle className="w-8 h-8 text-green-600" />
                       <div>
                         <div className="font-bold text-green-800">Free / ₹0 Payable</div>
-                        <div className="text-sm text-green-700 mt-1">
-                          No payment required. Confirm registration to join.
-                        </div>
+                        <div className="text-sm text-green-700 mt-1">No payment required. Confirm registration to join.</div>
                       </div>
                     </div>
                   </div>

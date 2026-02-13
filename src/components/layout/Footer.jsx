@@ -55,9 +55,8 @@ const supportLinks = [
             {/* Brand */}
             <div className="lg:col-span-2">
               <div className="flex items-center gap-3 mb-5">
-                <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center">
-                  <GiTrophy className="w-6 h-6 text-white" />
-                </div>
+                
+             <img src="/images/logo/rbmlogo.png" alt="RBM ESports Logo" className="rounded-full w-[58px] h-[58px]" />
                 <div>
                   <div className="font-bold text-lg text-slate-800">RBM ESports</div>
                   <div className="text-sm text-slate-600">Competitive BGMI Tournaments</div>

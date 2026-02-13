@@ -1,78 +1,218 @@
 import LegalPage from "@/components/legal/LegalPage";
+import { 
+  FiCheckCircle, 
+  FiAlertTriangle, 
+  FiCreditCard, 
+  FiShield, 
+  FiUserCheck,
+  FiUserX,
+  FiClock,
+  FiFileText
+} from "react-icons/fi";
+import { 
+  GiTrophy, 
+  GiCrossedSwords, 
+  GiSwordsPower, 
+  GiShield as GiShieldIcon,
+  GtGavel 
+} from "react-icons/gi";
+import { MdGavel, MdSecurity, MdVerified } from "react-icons/md";
 
 export const metadata = {
-  title: "Privacy Policy | RBM ESports",
-  description: "Privacy Policy for rbmesports.co (RBM ESports)."
+  title: "Terms & Conditions | RBM ESports",
+  description: "Terms & Conditions governing use of RBM ESports platform."
 };
 
-export default function PrivacyPolicyPage() {
+export default function TermsPage() {
   return (
     <LegalPage
-      title="Privacy Policy"
-      subtitle="This Privacy Policy explains what data we collect, why we collect it, and how we protect it on rbmesports.co."
+      title="Terms & Conditions"
+      subtitle="These Terms & Conditions govern your use of RBM ESports tournaments and services."
       lastUpdated="2026-02-10"
     >
-      <h2>1. Overview</h2>
-      <p>
-        RBM ESports (rbmesports.co) is a <strong>skill-based esports tournament platform</strong> for BGMI.
-        We do <strong>not</strong> provide gambling, betting, lottery, or chance-based games.
-      </p>
+      <div className="space-y-6">
 
-      <h2>2. Information we collect</h2>
-      <ul>
-        <li><strong>Account info:</strong> name, email, encrypted/hashed password (if applicable), profile image (optional).</li>
-        <li><strong>Gaming profile:</strong> BGMI ID, in-game name (IGN).</li>
-        <li><strong>Contact info:</strong> phone number (if provided) for verification/support/withdrawals.</li>
-        <li><strong>Payments & wallet:</strong> payment reference IDs, order IDs, status, and wallet ledger history.</li>
-        <li><strong>Technical/log info:</strong> IP address, device/browser details, timestamps for security and troubleshooting.</li>
-      </ul>
+        {/* Section 1 - Acceptance */}
+        <div className="bg-white border border-gray-200 rounded-lg p-5">
+          <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-3 flex items-center gap-2">
+            <span className="h-2 w-2 bg-blue-600 rounded-full"></span>
+            1. Acceptance of Terms
+          </h2>
+          <p className="text-gray-700 leading-relaxed">
+            By registering on <strong className="text-gray-900">RBM ESports (rbmesports.co)</strong>, users agree to comply with all
+            tournament rules, policies, and platform guidelines. Continued use of the platform constitutes
+            acceptance of these terms.
+          </p>
+        </div>
 
-      <h2>3. How we use your information</h2>
-      <ul>
-        <li>To create/manage your account and tournament participation.</li>
-        <li>To verify payments and maintain wallet transactions.</li>
-        <li>To prevent fraud, abuse, and enforce fair play rules.</li>
-        <li>To respond to support requests.</li>
-      </ul>
+        {/* Section 2 - Platform Nature - Highlighted */}
+        <div className=" text-white p-5 rounded-lg border border-gray-700">
+          <div className="flex items-start gap-4">
+            <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center flex-shrink-0">
+              <GiTrophy className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold mb-2">2. Platform Nature</h2>
+              <p className="text-gray-300 text-sm leading-relaxed">
+                RBM ESports is a <strong className="text-white">skill-based esports tournament platform</strong> for BGMI.
+                We <span className="text-yellow-400 font-bold">do not provide gambling, betting, lottery, or chance-based gaming services</span>.
+                Entry/service fees are charged solely for tournament organization and operational services.
+              </p>
+            </div>
+          </div>
+        </div>
 
-      <h2>4. Email & phone usage</h2>
-      <ul>
-        <li><strong>Email:</strong> login, tournament confirmations, support communication.</li>
-        <li><strong>Phone:</strong> verification/support and withdrawal processing communication (if required).</li>
-      </ul>
+        {/* Section 3 - User Eligibility */}
+        <div>
+          <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <FiUserCheck className="w-5 h-5 text-blue-600" />
+            3. User Eligibility
+          </h2>
+          <div className="space-y-3">
+            <div className="flex items-start gap-3 bg-green-50 border border-green-200 rounded-lg p-3">
+              <div className="h-5 w-5 rounded-full bg-green-600 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <span className="text-white text-[10px] font-bold">✓</span>
+              </div>
+              <span className="text-sm text-gray-700">Users must provide accurate personal and gaming details</span>
+            </div>
+            <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg p-3">
+              <div className="h-5 w-5 rounded-full bg-red-600 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <span className="text-white text-[10px] font-bold">✗</span>
+              </div>
+              <span className="text-sm text-gray-700">Multiple/fake accounts are strictly prohibited</span>
+            </div>
+            <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg p-3">
+              <div className="h-5 w-5 rounded-full bg-red-600 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <span className="text-white text-[10px] font-bold">✗</span>
+              </div>
+              <span className="text-sm text-gray-700">Violation may lead to permanent account suspension</span>
+            </div>
+          </div>
+        </div>
 
-      <h2>5. Payment information handling (Razorpay)</h2>
-      <p>
-        Payments are processed by Razorpay. We do <strong>not store</strong> your card/UPI PIN or sensitive payment credentials.
-        Razorpay securely handles payment details. We may store limited payment references
-        (e.g., Razorpay payment ID/order ID/status) for reconciliation and support.
-      </p>
+        {/* Section 4 - Tournament Rules */}
+        <div>
+          <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <GiSwordsPower className="w-5 h-5 text-blue-600" />
+            4. Tournament Rules
+          </h2>
+          <div className="grid gap-3">
+            <div className="bg-white border border-gray-200 rounded-lg p-3 flex items-center gap-3">
+              <span className="h-2 w-2 bg-blue-600 rounded-full"></span>
+              <span className="text-sm text-gray-700">Players must join matches on time</span>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-lg p-3 flex items-center gap-3">
+              <span className="h-2 w-2 bg-blue-600 rounded-full"></span>
+              <span className="text-sm text-gray-700">Use of hacks, cheats, or exploits is strictly prohibited</span>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-lg p-3 flex items-center gap-3">
+              <span className="h-2 w-2 bg-blue-600 rounded-full"></span>
+              <span className="text-sm text-gray-700">Organizer decisions regarding match results are final</span>
+            </div>
+          </div>
+        </div>
 
-      <h2>6. Cookies / session storage</h2>
-      <p>
-        We may use cookies/local storage for authentication sessions and to improve user experience.
-        We may also use basic analytics to improve performance.
-      </p>
+        {/* Section 5 & 6 - Payments & Prize Distribution */}
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div className="bg-gradient-to-br from-blue-50 to-white border border-blue-100 rounded-lg p-5">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center">
+                <FiCreditCard className="w-5 h-5 text-white" />
+              </div>
+              <h2 className="font-bold text-gray-900">5. Payments</h2>
+            </div>
+            <p className="text-sm text-gray-700">
+              All payments are processed securely via <strong className="text-gray-900">Razorpay</strong>. 
+              RBM ESports does not store sensitive payment credentials.
+            </p>
+          </div>
+          <div className="bg-gradient-to-br from-blue-50 to-white border border-blue-100 rounded-lg p-5">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center">
+                <GiTrophy className="w-5 h-5 text-white" />
+              </div>
+              <h2 className="font-bold text-gray-900">6. Prize Distribution</h2>
+            </div>
+            <p className="text-sm text-gray-700">
+              Prize winnings credited to user wallet after verification. Withdrawals processed as per policy.
+            </p>
+          </div>
+        </div>
 
-      <h2>7. Data security</h2>
-      <ul>
-        <li>Passwords are stored securely (hashed/encrypted; never stored in plain text).</li>
-        <li>Access to admin functions is restricted.</li>
-        <li>We follow reasonable security practices to protect data.</li>
-      </ul>
+        {/* Section 7 & 8 - Refund & Account Suspension */}
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div className="bg-white border border-gray-200 rounded-lg p-5">
+            <h2 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+              <FiFileText className="w-4 h-4 text-gray-700" />
+              7. Refund Policy Reference
+            </h2>
+            <p className="text-sm text-gray-700">
+              Refund eligibility governed by our{' '}
+              <a href="/refund" className="text-blue-600 font-semibold hover:underline">
+                Refund & Cancellation Policy
+              </a>.
+              Entry fees are generally non-refundable once tournament begins.
+            </p>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-lg p-5">
+            <h2 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+              <FiUserX className="w-4 h-4 text-red-600" />
+              8. Account Suspension
+            </h2>
+            <p className="text-sm text-gray-700">
+              RBM ESports reserves the right to suspend accounts involved in fraud, abuse, cheating, or chargeback misuse.
+            </p>
+          </div>
+        </div>
 
-      <h2>8. Data sharing</h2>
-      <p>
-        We do not sell personal data. Data may be shared with service providers like payment gateways only to provide services,
-        or when required by law.
-      </p>
+        {/* Section 9 & 10 - Liability & Modifications */}
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-5">
+            <h2 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+              <FiAlertTriangle className="w-4 h-4 text-amber-600" />
+              9. Limitation of Liability
+            </h2>
+            <p className="text-sm text-gray-700">
+              Not responsible for technical failures, game server issues, connectivity problems, or third-party disruptions.
+            </p>
+          </div>
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-5">
+            <h2 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+              <FiClock className="w-4 h-4 text-gray-700" />
+              10. Modifications
+            </h2>
+            <p className="text-sm text-gray-700">
+              Terms may be updated at any time. Continued use constitutes acceptance.
+            </p>
+          </div>
+        </div>
 
-      <h2>9. Contact</h2>
-      <p>
-        If you have questions, contact us:
-        <br />
-        <strong>Email:</strong> rbmesports04@gmail.com
-      </p>
+        {/* Section 11 - Contact */}
+        <div className="bg-gradient-to-br from-gray-50 to-white border border-gray-200 rounded-lg p-5">
+          <div className="flex items-start gap-4">
+            <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-gray-700 to-gray-800 flex items-center justify-center flex-shrink-0">
+              <MdGavel className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h2 className="font-bold text-gray-900 mb-2">11. Contact</h2>
+              <p className="text-sm text-gray-700 mb-1">For legal or policy queries:</p>
+              <a 
+                href="mailto:rbmesports04@gmail.com" 
+                className="text-blue-600 font-semibold text-sm hover:underline inline-flex items-center gap-1"
+              >
+                rbmesports04@gmail.com
+                <span className="text-xs">→</span>
+              </a>
+            </div>
+          </div>
+        </div>
+
+        {/* Compliance Badge */}
+        <div className="flex items-center justify-center gap-2 pt-4">
+          <MdVerified className="w-4 h-4 text-blue-600" />
+          <span className="text-xs text-gray-500">Razorpay Verified • Compliant with Indian esports regulations</span>
+        </div>
+      </div>
     </LegalPage>
   );
 }

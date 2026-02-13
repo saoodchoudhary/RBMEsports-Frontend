@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 import { loadRazorpayScript, openRazorpay } from "@/lib/razorpay";
-import { useDispatch } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { showToast } from "@/store/uiSlice";
 import {
   GiWallet,
@@ -39,7 +39,13 @@ function formatDate(d) {
   if (!d) return "—";
   const x = new Date(d);
   if (Number.isNaN(x.getTime())) return "—";
-  return x.toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return x.toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
 function txLabel(type) {
@@ -74,6 +80,12 @@ function wdStatusChip(status) {
   }
 }
 
+function isValidUpi(upi) {
+  // simple check only (backend/admin manual verification anyway)
+  if (!upi) return false;
+  return /^[\w.\-]{2,}@[a-zA-Z]{2,}$/.test(String(upi).trim());
+}
+
 export default function WalletPage() {
   const [wallet, setWallet] = useState(null);
   const [withdrawals, setWithdrawals] = useState([]);
@@ -82,7 +94,9 @@ export default function WalletPage() {
   const [loading, setLoading] = useState(false);
 
   const [withdrawAmount, setWithdrawAmount] = useState(500);
-  const [method, setMethod] = useState("upi");
+  const [method, setMethod] = useState("upi"); // upi | bank
+
+  // Withdrawal info (saved)
   const [upiId, setUpiId] = useState("");
   const [accountHolderName, setAccountHolderName] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
@@ -93,18 +107,17 @@ export default function WalletPage() {
   const [txFilter, setTxFilter] = useState("all"); // all | deposit | prize_won | tournament_fee | withdrawal | refund
 
   const dispatch = useDispatch();
+  const user = useSelector((s) => s.auth.user);
 
   async function load() {
     const [wRes, wdRes] = await Promise.all([
       api.wallet(),
-      api.walletWithdrawals?.() // if exists in api
-        .catch(() => ({ data: [] })) // fallback if endpoint not wired in frontend
+      api.walletWithdrawals().catch(() => ({ data: [] }))
     ]);
 
     const w = wRes.data;
     setWallet(w);
 
-    // backend: wallet.withdrawalInfo saved
     if (w?.withdrawalInfo) {
       setMethod(w.withdrawalInfo.method || "upi");
       setUpiId(w.withdrawalInfo.upiId || "");
@@ -122,6 +135,15 @@ export default function WalletPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // optional UX: when method switches, clear irrelevant fields (but keep saved values if present)
+  useEffect(() => {
+    if (method === "upi") {
+      // keep bank fields as-is (because saved) but no harm
+    } else {
+      // keep upi as-is
+    }
+  }, [method]);
+
   async function addMoney() {
     try {
       setLoading(true);
@@ -133,17 +155,29 @@ export default function WalletPage() {
       const ok = await loadRazorpayScript();
       if (!ok) throw new Error("Failed to load Razorpay checkout.");
 
-      // backend expects {amount} body
+      // backend expects {amount}
       const orderRes = await api.walletAddMoneyOrder(amt);
       const { orderId, key } = orderRes.data;
 
+      // Razorpay options
       openRazorpay({
         key,
-        amount: String(amt * 100), // paise
+        amount: String(amt * 100),
         currency: "INR",
         name: "RBM ESports",
         description: "Wallet top-up",
         order_id: orderId,
+
+        // ✅ prefill improves conversion
+        prefill: {
+          name: user?.name || "",
+          email: user?.email || ""
+        },
+
+        notes: {
+          purpose: "wallet_topup"
+        },
+
         handler: async function (response) {
           try {
             await api.walletVerifyAdd({
@@ -165,7 +199,7 @@ export default function WalletPage() {
             dispatch(
               showToast({
                 title: "Verification Failed",
-                message: e.message,
+                message: e?.message || "Payment verification failed",
                 type: "error"
               })
             );
@@ -173,31 +207,62 @@ export default function WalletPage() {
             setLoading(false);
           }
         },
-        modal: { ondismiss: () => setLoading(false) },
+
+        modal: {
+          ondismiss: () => {
+            setLoading(false);
+            dispatch(
+              showToast({
+                title: "Payment Cancelled",
+                message: "You closed the payment window.",
+                type: "info"
+              })
+            );
+          }
+        },
+
         theme: { color: "#2563eb" }
       });
     } catch (e) {
-      dispatch(showToast({ title: "Add Money Failed", message: e.message, type: "error" }));
+      dispatch(showToast({ title: "Add Money Failed", message: e?.message || "Failed", type: "error" }));
       setLoading(false);
     }
   }
 
   async function saveWithdrawalInfo() {
     try {
+      // basic validation (optional but helpful)
+      if (method === "upi") {
+        if (!upiId.trim()) throw new Error("Please enter your UPI ID");
+        if (!isValidUpi(upiId)) throw new Error("Please enter a valid UPI ID (e.g. name@upi)");
+      } else {
+        if (!accountHolderName.trim()) throw new Error("Please enter account holder name");
+        if (!accountNumber.trim()) throw new Error("Please enter account number");
+        if (!ifscCode.trim()) throw new Error("Please enter IFSC code");
+        if (!bankName.trim()) throw new Error("Please enter bank name");
+      }
+
       const payload = {
         method,
-        accountHolderName,
-        accountNumber,
-        ifscCode,
-        bankName,
-        upiId
+        accountHolderName: accountHolderName.trim(),
+        accountNumber: accountNumber.trim(),
+        ifscCode: ifscCode.trim(),
+        bankName: bankName.trim(),
+        upiId: upiId.trim()
       };
 
       await api.walletWithdrawalInfo(payload);
-      dispatch(showToast({ title: "Information Saved", message: "Withdrawal information updated successfully.", type: "success" }));
+
+      dispatch(
+        showToast({
+          title: "Information Saved",
+          message: "Withdrawal information updated successfully.",
+          type: "success"
+        })
+      );
       await load();
     } catch (e) {
-      dispatch(showToast({ title: "Failed to Save", message: e.message, type: "error" }));
+      dispatch(showToast({ title: "Failed to Save", message: e?.message || "Failed", type: "error" }));
     }
   }
 
@@ -207,18 +272,40 @@ export default function WalletPage() {
       if (!amt || amt < 100) throw new Error("Minimum withdrawal amount is ₹100");
       if (wallet && amt > safeNum(wallet.balance, 0)) throw new Error("Insufficient balance for withdrawal");
 
+      // ✅ validate method details
+      if (method === "upi") {
+        if (!upiId.trim()) throw new Error("Enter your UPI ID (or save it first)");
+        if (!isValidUpi(upiId)) throw new Error("Invalid UPI ID (e.g. name@upi)");
+      } else {
+        if (!accountHolderName.trim()) throw new Error("Enter account holder name");
+        if (!accountNumber.trim()) throw new Error("Enter account number");
+        if (!ifscCode.trim()) throw new Error("Enter IFSC code");
+        if (!bankName.trim()) throw new Error("Enter bank name");
+      }
+
       const accountDetails =
         method === "upi"
-          ? { upiId }
-          : { accountHolderName, accountNumber, ifscCode, bankName };
+          ? { upiId: upiId.trim() }
+          : {
+              accountHolderName: accountHolderName.trim(),
+              accountNumber: accountNumber.trim(),
+              ifscCode: ifscCode.trim(),
+              bankName: bankName.trim()
+            };
 
       await api.walletWithdraw({ amount: amt, method, accountDetails });
 
-      dispatch(showToast({ title: "Withdrawal Requested", message: "Your withdrawal request has been submitted.", type: "success" }));
+      dispatch(
+        showToast({
+          title: "Withdrawal Requested",
+          message: "Your withdrawal request has been submitted. Admin will process it manually.",
+          type: "success"
+        })
+      );
       await load();
       setWithdrawAmount(500);
     } catch (e) {
-      dispatch(showToast({ title: "Withdrawal Failed", message: e.message, type: "error" }));
+      dispatch(showToast({ title: "Withdrawal Failed", message: e?.message || "Failed", type: "error" }));
     }
   }
 
@@ -242,21 +329,17 @@ export default function WalletPage() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-slate-900">Digital Wallet</h1>
-              <p className="text-slate-700 mt-1">
-                Manage your funds securely. Prize money is automatically credited here.
-              </p>
+              <p className="text-slate-700 mt-1">Manage your funds securely. Prize money is automatically credited here.</p>
             </div>
           </div>
 
           <div className="bg-white/80 backdrop-blur-sm rounded-xl p-5 border border-blue-200 shadow-sm">
             <div className="text-center">
               <div className="text-sm text-slate-600 font-medium mb-2">Available Balance</div>
-              <div className="text-4xl font-bold text-blue-700">
-                ₹{safeNum(wallet?.balance, 0).toLocaleString("en-IN")}
-              </div>
+              <div className="text-4xl font-bold text-blue-700">₹{safeNum(wallet?.balance, 0).toLocaleString("en-IN")}</div>
               <div className="flex items-center justify-center gap-2 mt-3 text-sm text-slate-600">
                 <FiShield className="w-4 h-4 text-green-500" />
-                <span>Razorpay signature verified</span>
+                <span>Razorpay signature verified deposits</span>
               </div>
             </div>
           </div>
@@ -428,7 +511,7 @@ export default function WalletPage() {
               <div className="flex items-start gap-3">
                 <FiInfo className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
                 <div className="text-sm text-slate-700">
-                  <span className="font-semibold">Note:</span> Wallet topups create Razorpay orders and are credited only after signature verification.
+                  <span className="font-semibold">Note:</span> Wallet topups are credited only after Razorpay signature verification.
                 </div>
               </div>
             </div>
@@ -446,7 +529,7 @@ export default function WalletPage() {
               </div>
               <div>
                 <h2 className="text-xl font-bold text-slate-900">Withdraw Funds</h2>
-                <p className="text-slate-600">Admin approval required (24–48 hours)</p>
+                <p className="text-slate-600">Manual admin payout (UPI/Bank). Usually 24–48 hours.</p>
               </div>
             </div>
 
@@ -467,18 +550,14 @@ export default function WalletPage() {
                   />
                 </div>
 
-                <div className="text-xs text-slate-500 mt-2">
-                  Minimum withdrawal: ₹100
-                </div>
+                <div className="text-xs text-slate-500 mt-2">Minimum withdrawal: ₹100</div>
               </div>
 
               <div className="bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 rounded-xl p-4">
                 <div className="flex justify-between items-center">
                   <div className="text-slate-700">
                     Available Balance:{" "}
-                    <span className="font-bold text-emerald-700">
-                      ₹{safeNum(wallet?.balance, 0).toLocaleString("en-IN")}
-                    </span>
+                    <span className="font-bold text-emerald-700">₹{safeNum(wallet?.balance, 0).toLocaleString("en-IN")}</span>
                   </div>
                   <button
                     onClick={() => wallet && setWithdrawAmount(safeNum(wallet.balance, 0))}
@@ -553,22 +632,16 @@ export default function WalletPage() {
               </div>
               <div>
                 <h2 className="text-xl font-bold text-slate-900">Account Details</h2>
-                <p className="text-slate-600">Saved to wallet.withdrawalInfo</p>
+                <p className="text-slate-600">Saved for future withdrawals</p>
               </div>
             </div>
 
             <div className="space-y-6">
               {method === "upi" ? (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">UPI ID</label>
-                    <Input
-                      value={upiId}
-                      onChange={(e) => setUpiId(e.target.value)}
-                      placeholder="yourname@upi"
-                      icon={<FaGooglePay className="w-4 h-4" />}
-                    />
-                  </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">UPI ID</label>
+                  <Input value={upiId} onChange={(e) => setUpiId(e.target.value)} placeholder="yourname@upi" icon={<FaGooglePay className="w-4 h-4" />} />
+                  <div className="text-xs text-slate-500 mt-2">Example: name@okicici, name@ybl</div>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -604,12 +677,21 @@ export default function WalletPage() {
               <div className="border-t pt-6">
                 <div className="flex items-center gap-2 mb-3">
                   <FiShield className="w-5 h-5 text-green-500" />
-                  <span className="font-semibold text-slate-800">Security Assurance</span>
+                  <span className="font-semibold text-slate-800">Manual payout policy</span>
                 </div>
                 <ul className="space-y-2 text-sm text-slate-600">
-                  <li className="flex items-center gap-2"><div className="h-1.5 w-1.5 rounded-full bg-green-500"></div> Admin approval required</li>
-                  <li className="flex items-center gap-2"><div className="h-1.5 w-1.5 rounded-full bg-green-500"></div> Processing: 24–48 hours</li>
-                  <li className="flex items-center gap-2"><div className="h-1.5 w-1.5 rounded-full bg-green-500"></div> Ledger recorded in wallet.transactions</li>
+                  <li className="flex items-center gap-2">
+                    <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                    Admin approves and pays via UPI/Bank (manual)
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                    Processing: typically 24–48 hours
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                    Every request is recorded in wallet.pendingWithdrawals
+                  </li>
                 </ul>
               </div>
             </div>
@@ -617,7 +699,7 @@ export default function WalletPage() {
         </div>
       )}
 
-      {/* Transaction History (REAL) */}
+      {/* Transaction History */}
       <div className="card p-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
           <div className="flex items-center gap-3">
@@ -626,7 +708,7 @@ export default function WalletPage() {
             </div>
             <div>
               <h2 className="text-xl font-bold text-slate-900">Transaction History</h2>
-              <p className="text-slate-600">From wallet.transactions (backend ledger)</p>
+              <p className="text-slate-600">From wallet.transactions</p>
             </div>
           </div>
 
@@ -637,7 +719,9 @@ export default function WalletPage() {
                 type="button"
                 onClick={() => setTxFilter(k)}
                 className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition ${
-                  txFilter === k ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                  txFilter === k
+                    ? "bg-slate-900 text-white border-slate-900"
+                    : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
                 }`}
               >
                 {k === "all" ? "All" : txLabel(k).text}
@@ -692,12 +776,12 @@ export default function WalletPage() {
         )}
       </div>
 
-      {/* Withdrawal Requests (REAL) */}
+      {/* Withdrawal Requests */}
       <div className="card p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-xl font-bold text-slate-900">Withdrawal Requests</h2>
-            <p className="text-slate-600">From /api/wallet/withdrawals (pendingWithdrawals)</p>
+            <p className="text-slate-600">From /api/wallet/withdrawals</p>
           </div>
 
           <Button variant="outline" onClick={load} type="button">
@@ -710,28 +794,19 @@ export default function WalletPage() {
         ) : (
           <div className="space-y-2">
             {withdrawals.map((w) => (
-              <div
-                key={w._id}
-                className="p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
-              >
+              <div key={w._id} className="p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2">
                     <span className={`px-2 py-1 rounded-md border text-xs font-semibold ${wdStatusChip(w.status)}`}>
                       {String(w.status || "—").toUpperCase()}
                     </span>
-                    <div className="text-sm font-semibold text-slate-900">
-                      {w.method === "upi" ? "UPI" : "Bank"} withdrawal
-                    </div>
+                    <div className="text-sm font-semibold text-slate-900">{w.method === "upi" ? "UPI" : "Bank"} withdrawal</div>
                   </div>
                   <div className="mt-1 text-xs text-slate-500">{formatDate(w.requestedAt)}</div>
-                  {w.rejectionReason && (
-                    <div className="mt-2 text-xs text-rose-700">Rejected: {w.rejectionReason}</div>
-                  )}
+                  {w.rejectionReason && <div className="mt-2 text-xs text-rose-700">Rejected: {w.rejectionReason}</div>}
                 </div>
 
-                <div className="text-lg font-extrabold text-slate-900">
-                  ₹{safeNum(w.amount, 0).toLocaleString("en-IN")}
-                </div>
+                <div className="text-lg font-extrabold text-slate-900">₹{safeNum(w.amount, 0).toLocaleString("en-IN")}</div>
               </div>
             ))}
           </div>
@@ -743,10 +818,10 @@ export default function WalletPage() {
         <div className="flex items-start gap-2">
           <FiInfo className="w-5 h-5 mt-0.5" />
           <div>
-            <div className="font-semibold">Backend-aligned flow</div>
+            <div className="font-semibold">Flow summary</div>
             <div className="mt-1">
               Add money: Razorpay order → payment → backend signature verify → wallet credited.
-              Withdraw: request stored in pendingWithdrawals, processed by admin.
+              Withdraw: request stored in pendingWithdrawals, admin manually pays via UPI/Bank.
             </div>
           </div>
         </div>

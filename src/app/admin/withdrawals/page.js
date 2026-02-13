@@ -14,10 +14,12 @@ import {
   FiXCircle,
   FiClock,
   FiEye,
-  FiRefreshCw
+  FiRefreshCw,
+  FiX
 } from "react-icons/fi";
 import { GiMoneyStack, GiTakeMyMoney } from "react-icons/gi";
-import { toast } from "@/store/uiSlice";
+import { useDispatch } from "react-redux";
+import { showToast } from "@/store/uiSlice";
 
 function formatMoney(n) {
   const v = Number(n || 0);
@@ -64,7 +66,6 @@ function statusMeta(status) {
         iconColor: "text-red-500"
       };
     case "processing":
-      // Backend may return this (schema supports) but process endpoint doesn't set it
       return {
         label: "Processing",
         icon: FiClock,
@@ -81,13 +82,34 @@ function statusMeta(status) {
   }
 }
 
+function kv(label, value) {
+  return (
+    <div className="flex items-start justify-between gap-4 py-2">
+      <div className="text-sm text-slate-500">{label}</div>
+      <div className="text-sm font-medium text-slate-800 text-right break-all">{value || "—"}</div>
+    </div>
+  );
+}
+
 export default function AdminWithdrawalsPage() {
+  const dispatch = useDispatch();
+
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+
+  // Row modal
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState(null);
+
+  // Processing states
   const [processingId, setProcessingId] = useState(null);
+
+  // Modal inputs
+  const [txId, setTxId] = useState("");
+  const [rejectReason, setRejectReason] = useState("");
 
   async function load(nextStatus) {
     const st = typeof nextStatus === "string" ? nextStatus : statusFilter;
@@ -100,11 +122,13 @@ export default function AdminWithdrawalsPage() {
 
       setRows(res.data || []);
     } catch (error) {
-      toast({
-        title: "Error",
-        message: error?.message || "Failed to load withdrawals",
-        type: "error"
-      });
+      dispatch(
+        showToast({
+          title: "Error",
+          message: error?.message || "Failed to load withdrawals",
+          type: "error"
+        })
+      );
     } finally {
       setLoading(false);
     }
@@ -115,7 +139,6 @@ export default function AdminWithdrawalsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // When filter changes, hit backend filter too (faster)
   useEffect(() => {
     load(statusFilter);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -132,67 +155,6 @@ export default function AdminWithdrawalsPage() {
     return { total, pending, processing, completed, rejected, totalAmount };
   }, [rows]);
 
-  async function approve(w) {
-    if (!w?.walletId || !w?._id) {
-      toast({ title: "Error", message: "Invalid withdrawal data (missing walletId/_id)", type: "error" });
-      return;
-    }
-
-    if (!confirm(`Approve withdrawal of ${formatMoney(w.amount)} to ${w.user?.name || "User"}?`)) return;
-
-    setProcessingId(w._id);
-    try {
-      const tx = prompt("Enter Transaction ID (required):");
-      if (!tx) {
-        toast({ title: "Error", message: "Transaction ID is required", type: "error" });
-        return;
-      }
-
-      // ✅ Backend expects only completed/rejected
-      await api.adminProcessWithdrawal(w.walletId, w._id, {
-        status: "completed",
-        transactionId: tx
-      });
-
-      await load(statusFilter);
-      toast({ title: "Success", message: "Withdrawal approved successfully", type: "success" });
-    } catch (error) {
-      toast({ title: "Error", message: error?.message || "Failed to approve withdrawal", type: "error" });
-    } finally {
-      setProcessingId(null);
-    }
-  }
-
-  async function reject(w) {
-    if (!w?.walletId || !w?._id) {
-      toast({ title: "Error", message: "Invalid withdrawal data (missing walletId/_id)", type: "error" });
-      return;
-    }
-
-    if (!confirm(`Reject withdrawal of ${formatMoney(w.amount)} from ${w.user?.name || "User"}?`)) return;
-
-    setProcessingId(w._id);
-    try {
-      const reason = prompt("Enter rejection reason (required):");
-      if (!reason) {
-        toast({ title: "Error", message: "Reason is required", type: "error" });
-        return;
-      }
-
-      await api.adminProcessWithdrawal(w.walletId, w._id, {
-        status: "rejected",
-        rejectionReason: reason
-      });
-
-      await load(statusFilter);
-      toast({ title: "Success", message: "Withdrawal rejected successfully", type: "success" });
-    } catch (error) {
-      toast({ title: "Error", message: error?.message || "Failed to reject withdrawal", type: "error" });
-    } finally {
-      setProcessingId(null);
-    }
-  }
-
   const filteredRows = useMemo(() => {
     const s = search.trim().toLowerCase();
     if (!s) return rows;
@@ -206,7 +168,13 @@ export default function AdminWithdrawalsPage() {
         row.method,
         row.status,
         row.transactionId,
-        row.rejectionReason
+        row.rejectionReason,
+        // also search accountDetails if present
+        row.accountDetails?.upiId,
+        row.accountDetails?.accountHolderName,
+        row.accountDetails?.accountNumber,
+        row.accountDetails?.ifscCode,
+        row.accountDetails?.bankName
       ]
         .filter(Boolean)
         .join(" ")
@@ -230,11 +198,17 @@ export default function AdminWithdrawalsPage() {
       "requestedAt",
       "processedAt",
       "transactionId",
-      "rejectionReason"
+      "rejectionReason",
+      "upiId",
+      "accountHolderName",
+      "accountNumber",
+      "ifscCode",
+      "bankName"
     ];
 
     const lines = [header.join(",")].concat(
       filteredRows.map((r) => {
+        const ad = r.accountDetails || {};
         const vals = [
           r._id ?? "",
           r.walletId ?? "",
@@ -248,7 +222,12 @@ export default function AdminWithdrawalsPage() {
           r.requestedAt ? new Date(r.requestedAt).toISOString() : "",
           r.processedAt ? new Date(r.processedAt).toISOString() : "",
           r.transactionId ?? "",
-          r.rejectionReason ?? ""
+          r.rejectionReason ?? "",
+          ad.upiId ?? "",
+          ad.accountHolderName ?? "",
+          ad.accountNumber ?? "",
+          ad.ifscCode ?? "",
+          ad.bankName ?? ""
         ];
         return vals.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(",");
       })
@@ -261,6 +240,84 @@ export default function AdminWithdrawalsPage() {
     a.download = `withdrawals_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function openRow(r) {
+    setSelected(r);
+    setTxId("");
+    setRejectReason("");
+    setOpen(true);
+  }
+
+  function closeModal() {
+    setOpen(false);
+    setSelected(null);
+    setTxId("");
+    setRejectReason("");
+  }
+
+  async function approveSelected() {
+    const w = selected;
+    if (!w?.walletId || !w?._id) {
+      dispatch(showToast({ title: "Error", message: "Invalid withdrawal data (missing walletId/_id)", type: "error" }));
+      return;
+    }
+    if (w.status !== "pending") {
+      dispatch(showToast({ title: "Info", message: "Only pending withdrawals can be approved.", type: "info" }));
+      return;
+    }
+    if (!txId.trim()) {
+      dispatch(showToast({ title: "Transaction ID required", message: "Please enter transaction ID to approve.", type: "error" }));
+      return;
+    }
+
+    setProcessingId(w._id);
+    try {
+      await api.adminProcessWithdrawal(w.walletId, w._id, {
+        status: "completed",
+        transactionId: txId.trim()
+      });
+
+      dispatch(showToast({ title: "Success", message: "Withdrawal approved successfully", type: "success" }));
+      await load(statusFilter);
+      closeModal();
+    } catch (error) {
+      dispatch(showToast({ title: "Error", message: error?.message || "Failed to approve withdrawal", type: "error" }));
+    } finally {
+      setProcessingId(null);
+    }
+  }
+
+  async function rejectSelected() {
+    const w = selected;
+    if (!w?.walletId || !w?._id) {
+      dispatch(showToast({ title: "Error", message: "Invalid withdrawal data (missing walletId/_id)", type: "error" }));
+      return;
+    }
+    if (w.status !== "pending") {
+      dispatch(showToast({ title: "Info", message: "Only pending withdrawals can be rejected.", type: "info" }));
+      return;
+    }
+    if (!rejectReason.trim()) {
+      dispatch(showToast({ title: "Reason required", message: "Please enter rejection reason.", type: "error" }));
+      return;
+    }
+
+    setProcessingId(w._id);
+    try {
+      await api.adminProcessWithdrawal(w.walletId, w._id, {
+        status: "rejected",
+        rejectionReason: rejectReason.trim()
+      });
+
+      dispatch(showToast({ title: "Success", message: "Withdrawal rejected successfully", type: "success" }));
+      await load(statusFilter);
+      closeModal();
+    } catch (error) {
+      dispatch(showToast({ title: "Error", message: error?.message || "Failed to reject withdrawal", type: "error" }));
+    } finally {
+      setProcessingId(null);
+    }
   }
 
   const columns = [
@@ -293,9 +350,7 @@ export default function AdminWithdrawalsPage() {
               Bank
             </span>
           ) : (
-            <span className="px-2 py-1 bg-slate-100 text-slate-700 rounded text-xs font-medium whitespace-nowrap">
-              {r.method || "—"}
-            </span>
+            <span className="px-2 py-1 bg-slate-100 text-slate-700 rounded text-xs font-medium whitespace-nowrap">{r.method || "—"}</span>
           )}
         </div>
       )
@@ -328,74 +383,21 @@ export default function AdminWithdrawalsPage() {
       }
     },
     {
-      key: "details",
-      title: "Details",
-      render: (r) => (
-        <div className="text-xs text-slate-600 space-y-1 min-w-[200px]">
-          {r.transactionId && <div title={r.transactionId}>TX: {String(r.transactionId).slice(0, 16)}...</div>}
-          {r.rejectionReason && (
-            <div className="text-red-600 line-clamp-2" title={r.rejectionReason}>
-              Reason: {r.rejectionReason}
-            </div>
-          )}
-        </div>
-      )
-    },
-    {
       key: "actions",
-      title: "Actions",
+      title: "Open",
       render: (r) => (
         <div className="flex gap-2 whitespace-nowrap">
-          {r.status === "pending" ? (
-            <>
-              <Button
-                onClick={() => approve(r)}
-                disabled={processingId === r._id}
-                loading={processingId === r._id}
-                className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600"
-                size="sm"
-              >
-                <FiCheckCircle className="w-4 h-4 mr-1" />
-                Approve
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => reject(r)}
-                disabled={processingId === r._id}
-                size="sm"
-                className="border-red-300 text-red-600 hover:bg-red-50"
-              >
-                <FiXCircle className="w-4 h-4 mr-1" />
-                Reject
-              </Button>
-            </>
-          ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-slate-600 capitalize">{r.status || "Processed"}</span>
-              <button
-                type="button"
-                onClick={() =>
-                  alert(
-                    `Withdrawal ID: ${r._id}\nWallet ID: ${r.walletId}\nUser: ${r.user?.name || "N/A"}\nBGMI ID: ${
-                      r.user?.bgmiId || "—"
-                    }\nStatus: ${r.status}\nAmount: ${formatMoney(r.amount)}\nMethod: ${r.method}\nRequestedAt: ${
-                      r.requestedAt ? new Date(r.requestedAt).toLocaleString() : "—"
-                    }\nProcessedAt: ${r.processedAt ? new Date(r.processedAt).toLocaleString() : "—"}\nTransaction ID: ${
-                      r.transactionId || "N/A"
-                    }\nReason: ${r.rejectionReason || "N/A"}`
-                  )
-                }
-                className="p-1 hover:bg-slate-100 rounded"
-                title="View Details"
-              >
-                <FiEye className="w-4 h-4 text-slate-500" />
-              </button>
-            </div>
-          )}
+          <Button variant="outline" size="sm" type="button" onClick={() => openRow(r)}>
+            <FiEye className="w-4 h-4 mr-1" />
+            View
+          </Button>
         </div>
       )
     }
   ];
+
+  const s = selected;
+  const ad = s?.accountDetails || {};
 
   return (
     <div className="space-y-6 overflow-x-hidden">
@@ -403,14 +405,9 @@ export default function AdminWithdrawalsPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Withdrawal Management</h1>
-          <p className="text-slate-600 mt-1">Manage and process user withdrawal requests</p>
+          <p className="text-slate-600 mt-1">Click a row to view details and approve/reject</p>
         </div>
-        <Button
-          onClick={() => load(statusFilter)}
-          variant="outline"
-          className="flex items-center gap-2"
-          type="button"
-        >
+        <Button onClick={() => load(statusFilter)} variant="outline" className="flex items-center gap-2" type="button">
           <FiRefreshCw className="w-4 h-4" />
           Refresh
         </Button>
@@ -504,12 +501,7 @@ export default function AdminWithdrawalsPage() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button
-              variant={statusFilter === "all" ? "primary" : "outline"}
-              onClick={() => setStatusFilter("all")}
-              size="sm"
-              type="button"
-            >
+            <Button variant={statusFilter === "all" ? "primary" : "outline"} onClick={() => setStatusFilter("all")} size="sm" type="button">
               All
             </Button>
             <Button
@@ -578,19 +570,161 @@ export default function AdminWithdrawalsPage() {
             <div className="text-slate-700 font-medium">Loading withdrawals...</div>
           </div>
         ) : filteredRows.length > 0 ? (
-          <Table columns={columns} rows={filteredRows} />
+          <div>
+            {/* Optional: row click to open modal */}
+            <Table
+              columns={columns}
+              rows={filteredRows}
+              onRowClick={(r) => openRow(r)}
+            />
+          </div>
         ) : (
           <div className="p-8 text-center">
             <div className="h-16 w-16 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center mx-auto mb-4">
               <FiDollarSign className="w-8 h-8 text-slate-400" />
             </div>
             <h3 className="text-lg font-semibold text-slate-700 mb-2">No Withdrawals Found</h3>
-            <p className="text-slate-600">
-              {search || statusFilter !== "all" ? "Try adjusting your search or filters" : "No withdrawal requests yet"}
-            </p>
+            <p className="text-slate-600">{search || statusFilter !== "all" ? "Try adjusting your search or filters" : "No withdrawal requests yet"}</p>
           </div>
         )}
       </Card>
+
+      {/* Modal */}
+      {open && selected && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/40" onClick={closeModal} />
+          <div className="absolute inset-0 flex items-center justify-center p-4">
+            <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+              <div className="p-5 border-b border-slate-200 flex items-center justify-between">
+                <div className="min-w-0">
+                  <div className="text-lg font-bold text-slate-900">Withdrawal Details</div>
+                  <div className="text-xs text-slate-500 truncate">ID: {selected._id}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="p-2 rounded-lg hover:bg-slate-100"
+                  title="Close"
+                >
+                  <FiX className="w-5 h-5 text-slate-600" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-6 max-h-[75vh] overflow-auto">
+                {/* Summary */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    <div className="text-sm font-semibold text-slate-900 mb-2">User</div>
+                    {kv("Name", selected.user?.name)}
+                    {kv("BGMI ID", selected.user?.bgmiId)}
+                    {kv("Email", selected.user?.email)}
+                    {kv("Phone", selected.user?.phone)}
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    <div className="text-sm font-semibold text-slate-900 mb-2">Request</div>
+                    {kv("Amount", formatMoney(selected.amount))}
+                    {kv("Method", selected.method)}
+                    {kv("Status", selected.status)}
+                    {kv("Requested At", selected.requestedAt ? new Date(selected.requestedAt).toLocaleString("en-IN") : "—")}
+                    {kv("Processed At", selected.processedAt ? new Date(selected.processedAt).toLocaleString("en-IN") : "—")}
+                  </div>
+                </div>
+
+                {/* Account Details */}
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <div className="text-sm font-semibold text-slate-900 mb-2">Payout Details</div>
+
+                  {selected.method === "upi" ? (
+                    <>
+                      {kv("UPI ID", ad.upiId)}
+                    </>
+                  ) : selected.method === "bank" ? (
+                    <>
+                      {kv("Account Holder", ad.accountHolderName)}
+                      {kv("Account Number", ad.accountNumber)}
+                      {kv("IFSC", ad.ifscCode)}
+                      {kv("Bank Name", ad.bankName)}
+                    </>
+                  ) : (
+                    <div className="text-sm text-slate-600">No payout details available.</div>
+                  )}
+
+                  {ad && Object.keys(ad).length > 0 ? null : (
+                    <div className="mt-2 text-xs text-amber-700">
+                      Warning: accountDetails not present in response. Ensure backend admin withdrawals API returns `accountDetails`.
+                    </div>
+                  )}
+                </div>
+
+                {/* Existing result */}
+                {(selected.transactionId || selected.rejectionReason) && (
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    <div className="text-sm font-semibold text-slate-900 mb-2">Result</div>
+                    {kv("Transaction ID", selected.transactionId)}
+                    {kv("Rejection Reason", selected.rejectionReason)}
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <div className="text-sm font-semibold text-slate-900 mb-3">Actions</div>
+
+                  {selected.status !== "pending" ? (
+                    <div className="text-sm text-slate-600">This request is already processed.</div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-3">
+                        <div className="text-sm font-medium text-slate-700">Approve</div>
+                        <Input
+                          value={txId}
+                          onChange={(e) => setTxId(e.target.value)}
+                          placeholder="Transaction ID (required)"
+                        />
+                        <Button
+                          onClick={approveSelected}
+                          disabled={processingId === selected._id}
+                          loading={processingId === selected._id}
+                          className="w-full bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600"
+                          type="button"
+                        >
+                          <FiCheckCircle className="w-4 h-4 mr-1" />
+                          Approve
+                        </Button>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="text-sm font-medium text-slate-700">Reject</div>
+                        <Input
+                          value={rejectReason}
+                          onChange={(e) => setRejectReason(e.target.value)}
+                          placeholder="Rejection reason (required)"
+                        />
+                        <Button
+                          onClick={rejectSelected}
+                          disabled={processingId === selected._id}
+                          variant="outline"
+                          className="w-full border-red-300 text-red-600 hover:bg-red-50"
+                          type="button"
+                        >
+                          <FiXCircle className="w-4 h-4 mr-1" />
+                          Reject
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-4 border-t border-slate-200 flex items-center justify-end gap-2">
+                <Button variant="outline" onClick={closeModal} type="button">
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

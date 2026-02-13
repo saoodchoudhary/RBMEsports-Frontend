@@ -15,7 +15,10 @@ import {
   GiSnowflake1,
   GiIsland,
   GiCaveEntrance,
-  GiModernCity
+  GiModernCity,
+  GiMachineGun,
+  GiSkills,
+  GiBulletImpact
 } from "react-icons/gi";
 import {
   FiUsers,
@@ -23,7 +26,8 @@ import {
   FiCalendar,
   FiEye,
   FiChevronRight,
-  FiCheckCircle
+  FiCheckCircle,
+  FiShield
 } from "react-icons/fi";
 import { MdSecurity, MdOutlineEmojiEvents } from "react-icons/md";
 import { BsFillPeopleFill } from "react-icons/bs";
@@ -41,13 +45,13 @@ const mapIcons = {
 };
 
 const mapColors = {
-  Erangel: "from-green-600 to-green-800",
-  Miramar: "from-amber-700 to-amber-900",
-  Sanhok: "from-emerald-600 to-emerald-800",
-  Vikendi: "from-cyan-600 to-blue-800",
-  Livik: "from-blue-600 to-indigo-800",
-  Karakin: "from-stone-700 to-stone-900",
-  Deston: "from-purple-600 to-purple-800"
+  Erangel: "from-blue-600 to-blue-800",
+  Miramar: "from-gray-700 to-gray-900",
+  Sanhok: "from-blue-700 to-gray-800",
+  Vikendi: "from-blue-500 to-gray-700",
+  Livik: "from-blue-600 to-gray-800",
+  Karakin: "from-gray-800 to-gray-900",
+  Deston: "from-blue-700 to-gray-800"
 };
 
 const mapImageFallbacks = {
@@ -105,9 +109,9 @@ export default function TournamentCard({ t }) {
   const getStatusText = (status) => {
     switch (status) {
       case "registration_open":
-        return "Registration Open";
+        return "Open Registration";
       case "ongoing":
-        return "Live Now";
+        return "LIVE NOW";
       case "completed":
         return "Completed";
       case "cancelled":
@@ -151,15 +155,11 @@ export default function TournamentCard({ t }) {
   const maxParticipants = safeNum(t?.maxParticipants, 0);
   const currentParticipants = safeNum(t?.currentParticipants, 0);
   const serviceFee = safeNum(t?.serviceFee, 0);
-
-  // Backend virtual: isRegistrationOpen, isFull, spotsRemaining
   const isRegistrationOpen = Boolean(t?.isRegistrationOpen) && !Boolean(t?.isFull);
-
   const spotsRemaining =
     typeof t?.spotsRemaining === "number"
       ? t.spotsRemaining
       : Math.max(0, maxParticipants - currentParticipants);
-
   const progressPct =
     maxParticipants > 0 ? Math.min(100, (currentParticipants / maxParticipants) * 100) : 0;
 
@@ -169,238 +169,244 @@ export default function TournamentCard({ t }) {
       if (t.featuredImage.startsWith("/")) return t.featuredImage;
       return `/${t.featuredImage}`;
     }
-
     if (!imageError && t?.bannerImage) {
       if (t.bannerImage.startsWith("http")) return t.bannerImage;
       if (t.bannerImage.startsWith("/")) return t.bannerImage;
       return `/${t.bannerImage}`;
     }
-
     return mapImageFallbacks[t?.map] || "/maps/default.jpg";
   };
 
   return (
     <div
-      className="card overflow-hidden group hover:shadow-xl transition-all duration-300 relative"
+      className="group relative overflow-hidden rounded-2xl bg-white shadow-md transition-all duration-300 hover:shadow-xl border border-gray-100"
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
-      {/* FULL ribbon */}
+      {/* FULL Ribbon - Minimal Red */}
       {!isRegistrationOpen && t?.status === "registration_open" && (
-        <div className="absolute top-0 right-0 z-10">
-          <div className="bg-red-500 text-white text-xs font-bold px-3 py-1 rounded-bl-lg shadow-lg">
+        <div className="absolute top-4 right-4 z-20">
+          <div className="bg-red-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-lg flex items-center gap-1.5">
+            <GiSkills className="w-3.5 h-3.5" />
             FULL
           </div>
         </div>
       )}
 
-      {/* Map Header */}
-      <div className="relative h-48 overflow-hidden">
+      {/* Map Header with Blue/Black Gradient */}
+      <div className="relative h-48 overflow-hidden bg-gradient-to-br from-gray-900 to-gray-800">
+        {/* Background Image with Overlay */}
         {!imageError ? (
           <div
-            className={`absolute inset-0 bg-gradient-to-br ${mapColors[t?.map] || "from-blue-600 to-purple-600"}`}
+            className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-110"
             style={{
               backgroundImage: `url(${getImageUrl()})`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              backgroundBlendMode: "overlay"
             }}
           >
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/30 to-transparent"></div>
-
-            <div className="absolute inset-0 opacity-10">
-              <div className="absolute top-4 left-4 h-12 w-12 rounded-full border-2"></div>
-              <div className="absolute bottom-4 right-4 h-8 w-8 rounded-full border"></div>
-              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 h-16 w-16 border-2 rounded-lg"></div>
-            </div>
-
-            {/* preload check */}
-            <img
-              src={getImageUrl()}
-              alt={t?.map || "map"}
-              className="absolute inset-0 w-full h-full object-cover opacity-0"
-              onError={() => setImageError(true)}
-            />
+            <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/60 to-gray-900/20"></div>
+            <div className="absolute inset-0 bg-blue-600/10 mix-blend-overlay"></div>
           </div>
         ) : (
-          <div className={`absolute inset-0 bg-gradient-to-br ${mapColors[t?.map] || "from-blue-600 to-purple-600"}`}>
-            <div className="absolute inset-0 bg-black/30"></div>
-            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
-              {mapIcons[t?.map] || <GiBurningForest className="w-5 h-5" />}
+          <div className={`absolute inset-0 bg-gradient-to-br ${mapColors[t?.map] || "from-blue-600 to-gray-800"}`}>
+            <div className="absolute inset-0 bg-black/40"></div>
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/30">
+              {mapIcons[t?.map] || <GiBurningForest className="w-16 h-16" />}
             </div>
           </div>
         )}
 
-        {/* Map Info */}
-        <div className="absolute inset-0">
-          <div className="absolute bottom-4 left-4 right-4">
-            <div className="flex items-center justify-between text-white">
-              <div className="flex items-center gap-2">
-                {mapIcons[t?.map] || <GiBurningForest className="w-5 h-5" />}
-                <span className="font-bold text-lg">{t?.map || "—"}</span>
-              </div>
-              <div className="text-xs bg-white/20 backdrop-blur-sm px-2 py-1 rounded-full">
-                {t?.perspective || "—"}
-              </div>
+        {/* Map Info - Professional Esports Style */}
+        <div className="absolute bottom-3 left-4 right-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 bg-black/50 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-gray-700">
+              <span className="text-white/90">
+                {mapIcons[t?.map] || <GiBurningForest className="w-4 h-4" />}
+              </span>
+              <span className="text-white font-bold text-sm">{t?.map || "Battle Ground"}</span>
+            </div>
+            <div className="bg-blue-600/90 backdrop-blur-sm px-3 py-1.5 rounded-lg text-xs font-semibold text-white">
+              {t?.perspective || "TPP/FPP"}
             </div>
           </div>
         </div>
 
-        {/* Status badge */}
+        {/* Status Badge */}
         <div className="absolute top-4 left-4 z-10">
-          <Badge variant={getStatusVariant(t?.status)} className="backdrop-blur-sm">
+          <Badge 
+            variant={getStatusVariant(t?.status)} 
+            className={`
+              backdrop-blur-sm border-0 shadow-lg
+              ${t?.status === "ongoing" ? "bg-blue-600 text-white" : ""}
+              ${t?.status === "registration_open" ? "bg-blue-500 text-white" : ""}
+              ${t?.status === "upcoming" ? "bg-gray-700 text-white" : ""}
+            `}
+          >
+            {t?.status === "ongoing" && <GiMachineGun className="w-3.5 h-3.5 mr-1 animate-pulse" />}
             {getStatusText(t?.status)}
           </Badge>
         </div>
 
-        {/* Prize badge */}
+        {/* Prize Pool - Professional Dark Design */}
         <div className="absolute top-4 right-4 z-10">
-          <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-3 py-1.5 rounded-lg shadow-lg">
-            <div className="flex items-center gap-1">
-              <GiTrophy className="w-4 h-4" />
-              <span className="font-bold">₹{prizePool.toLocaleString("en-IN")}</span>
+          <div className="bg-gradient-to-r from-gray-900 to-gray-800 px-4 py-2 rounded-xl border border-gray-700 shadow-xl">
+            <div className="flex items-center gap-2">
+              <GiTrophy className="w-4 h-4 text-blue-400" />
+              <div>
+                <div className="text-xs text-gray-400">Prize Pool</div>
+                <div className="text-white font-black">₹{prizePool.toLocaleString("en-IN")}</div>
+              </div>
             </div>
-            <div className="text-xs opacity-90">Prize Pool</div>
           </div>
         </div>
 
-        {/* Featured badge */}
+        {/* Featured Badge */}
         {t?.isFeatured && (
-          <div className="absolute top-14 left-4 z-10">
-            <Badge variant="warning" className="bg-gradient-to-r from-yellow-400 to-orange-400">
-              <MdOutlineEmojiEvents className="w-3 h-3 mr-1" />
-              Featured
+          <div className="absolute top-20 left-4 z-10">
+            <Badge variant="warning" className="bg-gradient-to-r from-blue-600 to-blue-700 text-white border-0 shadow-lg">
+              <MdOutlineEmojiEvents className="w-3.5 h-3.5 mr-1" />
+              FEATURED
             </Badge>
           </div>
         )}
 
-        {/* Hover */}
+        {/* Hover Overlay */}
         {hover && (
-          <div className="absolute inset-0 bg-gradient-to-t from-blue-600/30 to-transparent flex items-center justify-center z-10">
-            <div className="bg-white/10 backdrop-blur-sm rounded-full p-3 animate-pulse">
-              <FiEye className="w-6 h-6 text-white" />
+          <div className="absolute inset-0 bg-gradient-to-t from-blue-600/20 via-transparent to-transparent flex items-center justify-center z-10">
+            <div className="bg-white/90 backdrop-blur-sm rounded-full p-3 shadow-lg transform scale-90 transition-transform">
+              <FiEye className="w-5 h-5 text-blue-600" />
             </div>
           </div>
         )}
       </div>
 
-      {/* Body */}
-      <div className="p-6 pt-7">
+      {/* Content Body - Light Background */}
+      <div className="p-5 bg-white">
+        {/* Title & Type */}
         <div className="mb-4">
-          <h3 className="text-xl font-bold text-slate-800 group-hover:text-blue-600 transition-colors line-clamp-1">
-            {t?.title || "Tournament"}
+          <h3 className="text-lg font-black text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-1">
+            {t?.title || "BGMI Tournament"}
           </h3>
-
           <div className="flex items-center gap-3 mt-2">
-            <div className="flex items-center gap-1.5 text-sm text-slate-600">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-gray-600 bg-gray-100 px-2.5 py-1 rounded-full">
               {getTypeIcon(t?.tournamentType)}
               <span>{getTypeText(t?.tournamentType)}</span>
             </div>
-            <div className="h-4 w-px bg-slate-300"></div>
-            <div className="flex items-center gap-1.5 text-sm text-slate-600">
-              <GiTargetPrize className="w-4 h-4" />
-              <span>
-                {safeNum(t?.totalMatches, 1)} Match{safeNum(t?.totalMatches, 1) > 1 ? "es" : ""}
-              </span>
+            <div className="flex items-center gap-1.5 text-xs font-medium text-gray-600">
+              <GiTargetPrize className="w-3.5 h-3.5 text-blue-500" />
+              <span>{safeNum(t?.totalMatches, 1)} Matches</span>
             </div>
           </div>
         </div>
 
-        {/* Date/time */}
-        <div className="mb-6 p-4 rounded-xl bg-slate-50">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <div className="flex items-center gap-2 text-sm text-slate-600 mb-1">
-                <FiCalendar className="w-4 h-4" />
-                <span>Date</span>
+        {/* Date/Time - Professional Card Style */}
+        <div className="mb-5 p-4 bg-gray-50 rounded-xl border border-gray-100">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                <FiCalendar className="w-4 h-4 text-blue-600" />
               </div>
-              <div className="font-medium text-slate-800">{formatDate(t?.tournamentStartDate)}</div>
+              <div>
+                <div className="text-xs text-gray-500">Date</div>
+                <div className="text-sm font-bold text-gray-800">{formatDate(t?.tournamentStartDate)}</div>
+              </div>
             </div>
-            <div>
-              <div className="flex items-center gap-2 text-sm text-slate-600 mb-1">
-                <FiClock className="w-4 h-4" />
-                <span>Time</span>
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-lg bg-gray-100 flex items-center justify-center">
+                <FiClock className="w-4 h-4 text-gray-600" />
               </div>
-              <div className="font-medium text-slate-800">{formatTime(t?.tournamentStartDate)}</div>
+              <div>
+                <div className="text-xs text-gray-500">Time</div>
+                <div className="text-sm font-bold text-gray-800">{formatTime(t?.tournamentStartDate)}</div>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Stats grid */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <div className="text-center">
-            <div className="flex items-center justify-center gap-2 mb-1">
-              <FiUsers className="w-4 h-4 text-blue-600" />
-              <span className="font-bold text-lg text-slate-800">
+        {/* Stats Grid - Professional Esports Metrics */}
+        <div className="grid grid-cols-3 gap-2 mb-5">
+          {/* Players */}
+          <div className="text-center p-2 bg-gray-50 rounded-lg">
+            <div className="flex items-center justify-center gap-1 mb-1">
+              <FiUsers className="w-3.5 h-3.5 text-blue-600" />
+              <span className="text-base font-black text-gray-800">
                 {currentParticipants}/{maxParticipants || "—"}
               </span>
             </div>
-            <div className="text-xs text-slate-600">Players</div>
+            <div className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Players</div>
+            <div className="mt-1.5 h-1 bg-gray-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full"
+                style={{ width: `${progressPct}%` }}
+              ></div>
+            </div>
+            <div className="text-[10px] text-gray-500 mt-1 font-medium">{spotsRemaining} slots</div>
+          </div>
 
-            <div className="mt-1">
-              <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full transition-all duration-500"
-                  style={{ width: `${progressPct}%` }}
-                ></div>
-              </div>
-              <div className="text-xs text-slate-500 mt-1">{spotsRemaining} spots left</div>
+          {/* Winners */}
+          <div className="text-center p-2 bg-gray-50 rounded-lg">
+            <div className="flex items-center justify-center gap-1 mb-1">
+              <GiRank3 className="w-3.5 h-3.5 text-blue-600" />
+              <span className="text-base font-black text-gray-800">{t?.prizeDistribution?.length || 0}</span>
+            </div>
+            <div className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Winners</div>
+            <div className="mt-1.5 text-[10px] font-semibold text-blue-600">
+              Top {t?.prizeDistribution?.length || 0}
             </div>
           </div>
 
-          <div className="text-center">
-            <div className="flex items-center justify-center gap-2 mb-1">
-              <GiRank3 className="w-4 h-4 text-amber-600" />
-              <span className="font-bold text-lg text-slate-800">{t?.prizeDistribution?.length || 0}</span>
-            </div>
-            <div className="text-xs text-slate-600">Winners</div>
-            <div className="text-xs text-amber-600 font-medium mt-1">Top {t?.prizeDistribution?.length || 0}</div>
-          </div>
-
-          <div className="text-center">
-            <div className="flex items-center justify-center gap-2 mb-1">
+          {/* Entry Fee */}
+          <div className="text-center p-2 bg-gray-50 rounded-lg">
+            <div className="flex items-center justify-center gap-1 mb-1">
               {t?.isFree ? (
-                <FiCheckCircle className="w-4 h-4 text-green-600" />
+                <FiCheckCircle className="w-3.5 h-3.5 text-blue-600" />
               ) : (
-                <GiMoneyStack className="w-4 h-4 text-purple-600" />
+                <GiMoneyStack className="w-3.5 h-3.5 text-gray-700" />
               )}
-              <span className="font-bold text-lg text-slate-800">
+              <span className="text-base font-black text-gray-800">
                 {t?.isFree ? "FREE" : `₹${serviceFee}`}
               </span>
             </div>
-            <div className="text-xs text-slate-600">Entry Fee</div>
-            {!t?.isFree && <div className="text-xs text-slate-500 mt-1 line-clamp-1">Service fee included</div>}
+            <div className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Entry</div>
+            {!t?.isFree && <div className="mt-1.5 text-[10px] text-gray-500">Per Player</div>}
           </div>
         </div>
 
-        {/* CTA */}
-        <Link href={`/tournaments/${t?._id}`}>
+        {/* CTA Button - Professional Blue/Black */}
+        <Link href={`/tournaments/${t?._id}`} className="block">
           <Button
-            className="w-full flex items-center justify-center gap-2 group-hover:scale-[1.02] transition-transform"
+            className={`
+              w-full flex items-center justify-center gap-2 py-3.5 font-bold transition-all
+              ${isRegistrationOpen 
+                ? "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg shadow-blue-600/20" 
+                : "bg-gray-900 hover:bg-gray-800 text-white border-0"
+              }
+            `}
             disabled={!isRegistrationOpen}
-            variant={isRegistrationOpen ? "primary" : "outline"}
           >
             {isRegistrationOpen ? (
               <>
-                Join Tournament
+                <GiMachineGun className="w-4 h-4" />
+                JOIN BATTLE
                 <FiChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
               </>
             ) : (
               <>
-                View Details
+                <FiEye className="w-4 h-4" />
+                VIEW DETAILS
                 <FiChevronRight className="w-4 h-4" />
               </>
             )}
           </Button>
         </Link>
 
-        <div className="mt-4 pt-4 border-t border-slate-200 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs text-slate-600">
-            <MdSecurity className="w-3 h-3" />
-            <span>Verified</span>
+        {/* Footer - Verified & Views */}
+        <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-xs text-gray-600">
+            <FiShield className="w-3.5 h-3.5 text-blue-500" />
+            <span className="font-medium">RBM Verified</span>
           </div>
-          <div className="text-xs text-slate-600 flex items-center gap-1">
-            <FiEye className="w-3 h-3" />
+          <div className="flex items-center gap-1.5 text-xs text-gray-500">
+            <FiEye className="w-3.5 h-3.5" />
             <span>{safeNum(t?.viewCount, 0)} views</span>
           </div>
         </div>
