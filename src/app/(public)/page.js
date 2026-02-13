@@ -126,7 +126,7 @@ export default function HomePage() {
 
   return (
     <div className="w-full">
-      <div className=" py-6 sm:py-8 lg:py-10">
+      <div className=" ">
         <div className="space-y-12 sm:space-y-16 lg:space-y-20">
           
           {/* ===== HERO SECTION - CLASSIC PROFESSIONAL DESIGN ===== */}

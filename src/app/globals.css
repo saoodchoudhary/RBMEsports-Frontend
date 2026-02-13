@@ -278,6 +278,10 @@ body.modal-open {
 
 /* Responsive modal adjustments */
 @media (max-width: 640px) {
+  
+.container {
+  padding: 0 8px;
+}
   .modal-content {
     margin: 0 !important;
     border-radius: 0 !important;

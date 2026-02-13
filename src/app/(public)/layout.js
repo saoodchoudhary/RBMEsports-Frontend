@@ -5,7 +5,7 @@ export default function PublicLayout({ children }) {
   return (
     <>
       <Navbar />
-      <main className="container py-8">{children}</main>
+      <main className="container">{children}</main>
       <Footer />
     </>
   );
