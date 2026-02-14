@@ -29,7 +29,7 @@ import {
   FiCheckCircle,
   FiShield
 } from "react-icons/fi";
-import { MdSecurity, MdOutlineEmojiEvents } from "react-icons/md";
+import { MdOutlineEmojiEvents } from "react-icons/md";
 import { BsFillPeopleFill } from "react-icons/bs";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
@@ -69,7 +69,11 @@ function safeNum(n, fallback = 0) {
   return Number.isFinite(v) ? v : fallback;
 }
 
-export default function TournamentCard({ t }) {
+/**
+ * ✅ NEW: onJoin callback prop
+ * - onJoin(tournament) will open JoinTournamentModal from parent page (Home/Tournaments list)
+ */
+export default function TournamentCard({ t, onJoin }) {
   const [hover, setHover] = useState(false);
   const [imageError, setImageError] = useState(false);
 
@@ -155,11 +159,14 @@ export default function TournamentCard({ t }) {
   const maxParticipants = safeNum(t?.maxParticipants, 0);
   const currentParticipants = safeNum(t?.currentParticipants, 0);
   const serviceFee = safeNum(t?.serviceFee, 0);
+
   const isRegistrationOpen = Boolean(t?.isRegistrationOpen) && !Boolean(t?.isFull);
+
   const spotsRemaining =
     typeof t?.spotsRemaining === "number"
       ? t.spotsRemaining
       : Math.max(0, maxParticipants - currentParticipants);
+
   const progressPct =
     maxParticipants > 0 ? Math.min(100, (currentParticipants / maxParticipants) * 100) : 0;
 
@@ -193,15 +200,12 @@ export default function TournamentCard({ t }) {
         </div>
       )}
 
-      {/* Map Header with Blue/Black Gradient */}
+      {/* Map Header */}
       <div className="relative h-48 overflow-hidden bg-gradient-to-br from-gray-900 to-gray-800">
-        {/* Background Image with Overlay */}
         {!imageError ? (
           <div
             className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-110"
-            style={{
-              backgroundImage: `url(${getImageUrl()})`,
-            }}
+            style={{ backgroundImage: `url(${getImageUrl()})` }}
           >
             <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/60 to-gray-900/20"></div>
             <div className="absolute inset-0 bg-blue-600/10 mix-blend-overlay"></div>
@@ -215,7 +219,7 @@ export default function TournamentCard({ t }) {
           </div>
         )}
 
-        {/* Map Info - Professional Esports Style */}
+        {/* Map Info */}
         <div className="absolute bottom-3 left-4 right-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 bg-black/50 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-gray-700">
@@ -232,8 +236,8 @@ export default function TournamentCard({ t }) {
 
         {/* Status Badge */}
         <div className="absolute top-4 left-4 z-10">
-          <Badge 
-            variant={getStatusVariant(t?.status)} 
+          <Badge
+            variant={getStatusVariant(t?.status)}
             className={`
               backdrop-blur-sm border-0 shadow-lg
               ${t?.status === "ongoing" ? "bg-blue-600 text-white" : ""}
@@ -246,7 +250,7 @@ export default function TournamentCard({ t }) {
           </Badge>
         </div>
 
-        {/* Prize Pool - Professional Dark Design */}
+        {/* Prize Pool */}
         <div className="absolute top-4 right-4 z-10">
           <div className="bg-gradient-to-r from-gray-900 to-gray-800 px-4 py-2 rounded-xl border border-gray-700 shadow-xl">
             <div className="flex items-center gap-2">
@@ -279,7 +283,7 @@ export default function TournamentCard({ t }) {
         )}
       </div>
 
-      {/* Content Body - Light Background */}
+      {/* Body */}
       <div className="p-5 bg-white">
         {/* Title & Type */}
         <div className="mb-4">
@@ -298,7 +302,7 @@ export default function TournamentCard({ t }) {
           </div>
         </div>
 
-        {/* Date/Time - Professional Card Style */}
+        {/* Date/Time */}
         <div className="mb-5 p-4 bg-gray-50 rounded-xl border border-gray-100">
           <div className="grid grid-cols-2 gap-3">
             <div className="flex items-center gap-2">
@@ -322,9 +326,8 @@ export default function TournamentCard({ t }) {
           </div>
         </div>
 
-        {/* Stats Grid - Professional Esports Metrics */}
+        {/* Stats */}
         <div className="grid grid-cols-3 gap-2 mb-5">
-          {/* Players */}
           <div className="text-center p-2 bg-gray-50 rounded-lg">
             <div className="flex items-center justify-center gap-1 mb-1">
               <FiUsers className="w-3.5 h-3.5 text-blue-600" />
@@ -342,7 +345,6 @@ export default function TournamentCard({ t }) {
             <div className="text-[10px] text-gray-500 mt-1 font-medium">{spotsRemaining} slots</div>
           </div>
 
-          {/* Winners */}
           <div className="text-center p-2 bg-gray-50 rounded-lg">
             <div className="flex items-center justify-center gap-1 mb-1">
               <GiRank3 className="w-3.5 h-3.5 text-blue-600" />
@@ -354,7 +356,6 @@ export default function TournamentCard({ t }) {
             </div>
           </div>
 
-          {/* Entry Fee */}
           <div className="text-center p-2 bg-gray-50 rounded-lg">
             <div className="flex items-center justify-center gap-1 mb-1">
               {t?.isFree ? (
@@ -371,35 +372,38 @@ export default function TournamentCard({ t }) {
           </div>
         </div>
 
-        {/* CTA Button - Professional Blue/Black */}
-        <Link href={`/tournaments/${t?._id}`} className="block">
+        {/* ✅ ALWAYS 2 BUTTONS */}
+        <div className="grid grid-cols-2 gap-2">
           <Button
+            type="button"
+            onClick={() => onJoin?.(t)}
+            disabled={!isRegistrationOpen}
             className={`
-              w-full flex items-center justify-center gap-2 py-3.5 font-bold transition-all
-              ${isRegistrationOpen 
-                ? "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg shadow-blue-600/20" 
-                : "bg-gray-900 hover:bg-gray-800 text-white border-0"
+              w-full flex items-center justify-center gap-2 py-3 font-bold transition-all
+              ${isRegistrationOpen
+                ? "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg shadow-blue-600/20"
+                : "bg-gray-300 text-gray-600 cursor-not-allowed"
               }
             `}
-            disabled={!isRegistrationOpen}
           >
-            {isRegistrationOpen ? (
-              <>
-                <GiMachineGun className="w-4 h-4" />
-                JOIN BATTLE
-                <FiChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-              </>
-            ) : (
-              <>
-                <FiEye className="w-4 h-4" />
-                VIEW DETAILS
-                <FiChevronRight className="w-4 h-4" />
-              </>
-            )}
+            <GiMachineGun className="w-4 h-4" />
+            JOIN BATTLE
           </Button>
-        </Link>
 
-        {/* Footer - Verified & Views */}
+          <Link href={`/tournaments/${t?._id}`} className="block">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full flex items-center justify-center gap-2 py-3 font-bold border-gray-300 text-gray-800 hover:bg-gray-50"
+            >
+              <FiEye className="w-4 h-4" />
+              VIEW DETAILS
+              <FiChevronRight className="w-4 h-4" />
+            </Button>
+          </Link>
+        </div>
+
+        {/* Footer */}
         <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-xs text-gray-600">
             <FiShield className="w-3.5 h-3.5 text-blue-500" />

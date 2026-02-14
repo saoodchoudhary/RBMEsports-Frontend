@@ -16,29 +16,13 @@ import {
   FiShield,
   FiInfo,
   FiUsers,
-  FiClock,
-  FiCalendar,
-  FiArrowRight,
-  FiAlertCircle,
   FiXCircle
 } from "react-icons/fi";
-import {
-  GiTrophy,
-  GiTeamIdea,
-  GiSwordsPower,
-  GiBattleGear,
-  GiCash,
-  GiMoneyStack,
-  GiTakeMyMoney,
-  GiShield as GiShieldIcon,
-  GiConfirmed
-} from "react-icons/gi";
-import { BsFillPeopleFill, BsShieldCheck } from "react-icons/bs";
-import { MdVerified, MdSecurity, MdOutlineEmojiEvents } from "react-icons/md";
-import { FaCrown, FaRegGem } from "react-icons/fa";
+import { GiTeamIdea } from "react-icons/gi";
+import { BsFillPeopleFill } from "react-icons/bs";
 
-// ✅ Use these (not toast(...) direct)
 import { showToast } from "@/store/uiSlice";
+import ManualPaymentModal from "@/components/tournaments/ManualPaymentModal";
 
 function emptyMember() {
   return { bgmiId: "", inGameName: "" };
@@ -47,6 +31,13 @@ function emptyMember() {
 function safeNum(n, fallback = 0) {
   const v = Number(n);
   return Number.isFinite(v) ? v : fallback;
+}
+
+function normalizeId(x) {
+  if (!x) return null;
+  if (typeof x === "string") return x;
+  if (typeof x === "object" && x._id) return String(x._id);
+  return null;
 }
 
 export default function JoinTournamentModal({ open, onClose, tournament }) {
@@ -72,8 +63,14 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
   // Members for squad
   const [members, setMembers] = useState([]);
 
-  const baseAmount = tournament?.isFree ? 0 : safeNum(tournament?.serviceFee, 0);
+  // ✅ Manual payment popup state
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualCtx, setManualCtx] = useState(null); // { paymentId, amount, tournamentTitle }
 
+  // ✅ Keep a fresh tournament snapshot (to detect already registered + paymentId)
+  const [freshTournament, setFreshTournament] = useState(null);
+
+  const baseAmount = tournament?.isFree ? 0 : safeNum(tournament?.serviceFee, 0);
   const isRegistrationOpen = Boolean(tournament?.isRegistrationOpen) && !Boolean(tournament?.isFull);
 
   useEffect(() => {
@@ -82,8 +79,24 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
     }
   }, [open, user, router, tournament]);
 
+  // ✅ Fetch fresh tournament details on open
+  useEffect(() => {
+    async function fetchFresh() {
+      try {
+        if (!open || !tournament?._id) return;
+        const res = await api.getTournament(tournament._id);
+        setFreshTournament(res?.data || null);
+      } catch {
+        // ignore (modal can still work)
+        setFreshTournament(null);
+      }
+    }
+    fetchFresh();
+  }, [open, tournament?._id]);
+
   useEffect(() => {
     if (!open) resetForm();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const initializeMembers = () => {
@@ -100,6 +113,7 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
 
   useEffect(() => {
     if (tournament && user) initializeMembers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tournament, user]);
 
   const resetForm = () => {
@@ -110,6 +124,9 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
     setPartnerBgmiId("");
     setPartnerInGameName("");
     setFormErrors({});
+    setManualOpen(false);
+    setManualCtx(null);
+    setFreshTournament(null);
     if (tournament && user) initializeMembers();
   };
 
@@ -186,6 +203,31 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
     return errors;
   };
 
+  // ✅ Find existing paymentId if already registered
+  function findExistingPaymentId() {
+    const t = freshTournament;
+    if (!t || !user?.id) return null;
+
+    if (t.tournamentType === "squad") {
+      // tournament.teams might exist in some backend versions, but in your backend getTournament populates winners/participants only.
+      // So squad paymentId often comes from TournamentTeam. If not present in getTournament, we can't detect here.
+      // We'll rely on backend register-squad response paymentId OR add a backend endpoint later if needed.
+      return null;
+    }
+
+    const participant = (t.participants || []).find((p) => String(p.userId?._id || p.userId) === String(user.id));
+    return normalizeId(participant?.paymentId);
+  }
+
+  function openManual(paymentId) {
+    setManualCtx({
+      paymentId: paymentId || null,
+      amount: payable,
+      tournamentTitle: tournament?.title || ""
+    });
+    setManualOpen(true);
+  }
+
   async function applyCoupon() {
     if (!couponCode.trim()) return;
 
@@ -199,7 +241,6 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
 
       if (res.success) {
         setCouponInfo(res.data);
-
         dispatch(
           showToast({
             type: "success",
@@ -232,35 +273,31 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
 
   async function registerNow() {
     if (!isRegistrationOpen) {
-      dispatch(
-        showToast({
-          type: "error",
-          title: "Registration Closed",
-          message: "Registration is not open for this tournament"
-        })
-      );
+      dispatch(showToast({ type: "error", title: "Registration Closed", message: "Registration is not open for this tournament" }));
       return;
+    }
+
+    // ✅ If payable > 0 and user already registered, DON'T re-register.
+    if (payable > 0) {
+      const existingPaymentId = findExistingPaymentId();
+      if (existingPaymentId) {
+        onClose?.();
+        dispatch(showToast({ type: "info", title: "Already registered", message: "Payment pending. Please pay and submit UTR." }));
+        openManual(existingPaymentId);
+        return;
+      }
     }
 
     const errors = validateForm();
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
-      dispatch(
-        showToast({
-          type: "error",
-          title: "Validation Error",
-          message: errors.profile || "Please fill all required fields"
-        })
-      );
+      dispatch(showToast({ type: "error", title: "Validation Error", message: errors.profile || "Please fill all required fields" }));
       return;
     }
 
     setLoading(true);
     try {
-      const payloadBase = {
-        couponCode: couponCode?.trim() || undefined
-      };
-
+      const payloadBase = { couponCode: couponCode?.trim() || undefined };
       let res;
 
       if (tournament.tournamentType === "squad") {
@@ -284,45 +321,75 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
         res = await api.registerSoloDuo(tournament._id, payloadBase);
       }
 
-      if (res.success) {
-        onClose();
-
-        if (payable === 0) {
-          router.refresh();
-          dispatch(
-            showToast({
-              type: "success",
-              title: "Registered Successfully",
-              message: "You have been registered for the tournament"
-            })
-          );
-        } else {
-          dispatch(
-            showToast({
-              type: "success",
-              title: "Registration Done",
-              message: "Redirecting to payment..."
-            })
-          );
-          router.push("/payments");
-        }
-      } else {
-        dispatch(
-          showToast({
-            type: "error",
-            title: "Registration Failed",
-            message: res?.message || "Please try again"
-          })
-        );
+      if (!res.success) {
+        dispatch(showToast({ type: "error", title: "Registration Failed", message: res?.message || "Please try again" }));
+        return;
       }
+
+      onClose?.();
+
+      if (payable === 0) {
+        router.refresh();
+        dispatch(showToast({ type: "success", title: "Registered Successfully", message: "You have been registered for the tournament" }));
+        return;
+      }
+
+      // ✅ Use returned paymentId (backend payments/create-order expects paymentId)
+      const paymentId = res?.data?.paymentId || res?.paymentId;
+
+      if (paymentId) {
+        dispatch(showToast({ type: "success", title: "Registration Done", message: "Pay via UPI and submit UTR for verification." }));
+        openManual(paymentId);
+        return;
+      }
+
+      // Fallback: re-fetch tournament to find paymentId (solo/duo)
+      try {
+        const fresh = await api.getTournament(tournament._id);
+        setFreshTournament(fresh?.data || null);
+        const pid = (() => {
+          const t = fresh?.data;
+          if (!t) return null;
+          const participant = (t.participants || []).find((p) => String(p.userId?._id || p.userId) === String(user.id));
+          return normalizeId(participant?.paymentId);
+        })();
+
+        if (pid) {
+          dispatch(showToast({ type: "success", title: "Registration Done", message: "Pay via UPI and submit UTR for verification." }));
+          openManual(pid);
+          return;
+        }
+      } catch {
+        // ignore
+      }
+
+      dispatch(showToast({ type: "error", title: "Payment Error", message: "PaymentId not found. Please contact support." }));
     } catch (error) {
-      dispatch(
-        showToast({
-          type: "error",
-          title: "Registration Failed",
-          message: error?.message || "Please try again"
-        })
-      );
+      // If backend says already registered, recover by opening existing payment modal (solo/duo)
+      const msg = String(error?.message || "");
+      if (msg.toLowerCase().includes("already registered")) {
+        try {
+          const fresh = await api.getTournament(tournament._id);
+          setFreshTournament(fresh?.data || null);
+          const pid = (() => {
+            const t = fresh?.data;
+            if (!t) return null;
+            const participant = (t.participants || []).find((p) => String(p.userId?._id || p.userId) === String(user.id));
+            return normalizeId(participant?.paymentId);
+          })();
+
+          if (pid) {
+            onClose?.();
+            dispatch(showToast({ type: "info", title: "Already registered", message: "Payment pending. Please pay and submit UTR." }));
+            openManual(pid);
+            return;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      dispatch(showToast({ type: "error", title: "Registration Failed", message: error?.message || "Please try again" }));
     } finally {
       setLoading(false);
     }
@@ -331,263 +398,172 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
   if (!tournament || !user) return null;
 
   return (
-    <Modal open={open} onClose={onClose} title="Join Tournament" size="lg">
-      <div className="space-y-5 sm:space-y-6">
-        
-        {/* ===== TOURNAMENT INFO CARD ===== */}
-        <div className="bg-gradient-to-r from-blue-50 to-blue-50 border border-blue-200 rounded-lg sm:rounded-xl p-4 sm:p-5">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-            <div className="flex-1">
-              <h3 className="font-bold text-gray-900 text-base sm:text-lg">{tournament.title}</h3>
+    <>
+      <Modal open={open} onClose={onClose} title="Join Tournament" size="lg">
+        <div className="space-y-6">
+          {/* Tournament Info */}
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-xl p-4">
+            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+              <div className="flex-1">
+                <h3 className="font-bold text-slate-800 text-lg">{tournament.title}</h3>
 
-              <div className="flex flex-wrap items-center gap-2 mt-2">
-                <span className="inline-flex items-center gap-1 text-xs sm:text-sm font-semibold text-blue-700 bg-blue-100 px-2.5 py-1 rounded-full">
-                  {tournament.tournamentType === "solo" ? (
-                    <FiUsers className="w-3.5 h-3.5" />
-                  ) : tournament.tournamentType === "duo" ? (
-                    <BsFillPeopleFill className="w-3.5 h-3.5" />
-                  ) : (
-                    <GiTeamIdea className="w-3.5 h-3.5" />
-                  )}
-                  {getTournamentTypeText()}
-                </span>
+                <div className="flex flex-wrap items-center gap-2 mt-2">
+                  <span className="flex items-center gap-1 text-sm font-medium text-blue-600 bg-blue-100 px-3 py-1 rounded-full">
+                    {tournament.tournamentType === "solo" ? (
+                      <FiUsers className="w-4 h-4" />
+                    ) : tournament.tournamentType === "duo" ? (
+                      <BsFillPeopleFill className="w-4 h-4" />
+                    ) : (
+                      <GiTeamIdea className="w-4 h-4" />
+                    )}
+                    {getTournamentTypeText()}
+                  </span>
 
-                <span className="text-xs sm:text-sm text-gray-600 bg-white px-2.5 py-1 rounded-full border border-gray-200">
-                  {tournament.isFree ? "FREE ENTRY" : `Entry: ₹${baseAmount}`}
-                </span>
-              </div>
-
-              <div className="text-xs sm:text-sm text-gray-600 mt-2 flex items-center gap-1">
-                <FiInfo className="w-3.5 h-3.5 text-blue-600" />
-                {getMembersInfoText()}
-              </div>
-
-              {!isRegistrationOpen && (
-                <div className="mt-3 text-xs sm:text-sm text-red-600 font-semibold flex items-center gap-1">
-                  <FiXCircle className="w-4 h-4" />
-                  Registration is currently closed for this tournament
+                  <span className="text-sm text-slate-600">
+                    {tournament.isFree ? "Free Entry" : `Entry Fee: ₹${baseAmount}`}
+                  </span>
                 </div>
-              )}
-            </div>
 
-            <div className="flex sm:flex-col items-center sm:items-end gap-2 sm:gap-1">
-              <div className="text-lg sm:text-2xl font-bold text-blue-600">₹{safeNum(tournament.prizePool, 0).toLocaleString("en-IN")}</div>
-              <div className="text-[10px] sm:text-xs text-gray-500">Prize Pool</div>
-            </div>
-          </div>
-        </div>
+                <div className="text-sm text-slate-500 mt-2">{getMembersInfoText()}</div>
 
-        {/* ===== TABS ===== */}
-        <div className="border-b border-gray-200">
-          <div className="flex space-x-1 overflow-x-auto hide-scrollbar">
-            {tabs.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setActiveTab(tab.key)}
-                className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-semibold whitespace-nowrap transition-colors ${
-                  activeTab === tab.key
-                    ? "text-blue-600 border-b-2 border-blue-600"
-                    : "text-gray-600 hover:text-blue-500"
-                }`}
-              >
-                <span className="text-blue-600">{tab.icon}</span>
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* ===== CONTENT AREA ===== */}
-        <div className="space-y-5 sm:space-y-6">
-          
-          {/* ===== DETAILS TAB ===== */}
-          {activeTab === "details" && (
-            <>
-              {formErrors.profile && (
-                <div className="p-3 sm:p-4 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs sm:text-sm flex items-start gap-2">
-                  <FiAlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                  {formErrors.profile}
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
-                {/* Tournament Information */}
-                <div className="bg-white border border-gray-200 rounded-lg p-4">
-                  <h4 className="font-semibold text-gray-800 text-sm sm:text-base mb-3 flex items-center gap-2">
-                    <FiAward className="w-4 h-4 text-blue-600" />
-                    Tournament Information
-                  </h4>
-
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center p-2 hover:bg-gray-50 rounded-lg text-xs sm:text-sm">
-                      <span className="text-gray-600">Date:</span>
-                      <span className="font-medium text-gray-900">
-                        {tournament.tournamentStartDate
-                          ? new Date(tournament.tournamentStartDate).toLocaleDateString("en-IN")
-                          : "—"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center p-2 hover:bg-gray-50 rounded-lg text-xs sm:text-sm">
-                      <span className="text-gray-600">Time:</span>
-                      <span className="font-medium text-gray-900">
-                        {tournament.tournamentStartDate
-                          ? new Date(tournament.tournamentStartDate).toLocaleTimeString("en-IN", {
-                              hour: "2-digit",
-                              minute: "2-digit"
-                            })
-                          : "—"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center p-2 hover:bg-gray-50 rounded-lg text-xs sm:text-sm">
-                      <span className="text-gray-600">Map:</span>
-                      <span className="font-medium text-gray-900">{tournament.map || "—"}</span>
-                    </div>
-                    <div className="flex justify-between items-center p-2 hover:bg-gray-50 rounded-lg text-xs sm:text-sm">
-                      <span className="text-gray-600">Perspective:</span>
-                      <span className="font-medium text-gray-900">{tournament.perspective || "—"}</span>
-                    </div>
+                {!isRegistrationOpen && (
+                  <div className="mt-3 text-sm text-red-600 font-medium">
+                    Registration is currently closed for this tournament.
                   </div>
+                )}
+              </div>
+
+              <div className="mt-2 md:mt-0">
+                <div className="text-2xl font-bold text-blue-600">
+                  ₹{safeNum(tournament.prizePool, 0).toLocaleString("en-IN")}
                 </div>
+                <div className="text-xs text-slate-600">Prize Pool</div>
+              </div>
+            </div>
+          </div>
 
-                {/* Registration Status */}
-                <div className="bg-white border border-gray-200 rounded-lg p-4">
-                  <h4 className="font-semibold text-gray-800 text-sm sm:text-base mb-3 flex items-center gap-2">
-                    <FiUsers className="w-4 h-4 text-blue-600" />
-                    Registration Status
-                  </h4>
+          {/* Tabs */}
+          <div className="border-b border-slate-200">
+            <div className="flex space-x-1 overflow-x-auto">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors ${
+                    activeTab === tab.key
+                      ? "text-blue-600 border-b-2 border-blue-600"
+                      : "text-slate-600 hover:text-blue-500"
+                  }`}
+                >
+                  {tab.icon}
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center p-2 hover:bg-gray-50 rounded-lg text-xs sm:text-sm">
-                      <span className="text-gray-600">Participants:</span>
-                      <span className="font-medium text-gray-900">
-                        {safeNum(tournament.currentParticipants, 0)}/{safeNum(tournament.maxParticipants, 0) || "—"}
-                      </span>
-                    </div>
+          {/* Content */}
+          <div className="space-y-6">
+            {/* DETAILS */}
+            {activeTab === "details" && (
+              <>
+                {formErrors.profile && (
+                  <div className="p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-sm">
+                    {formErrors.profile}
+                  </div>
+                )}
 
-                    <div className="flex justify-between items-center p-2 hover:bg-gray-50 rounded-lg text-xs sm:text-sm">
-                      <span className="text-gray-600">Spots Left:</span>
-                      <span className="font-medium text-blue-600">
-                        {typeof tournament.spotsRemaining === "number"
-                          ? tournament.spotsRemaining
-                          : Math.max(0, safeNum(tournament.maxParticipants, 0) - safeNum(tournament.currentParticipants, 0))}
-                      </span>
-                    </div>
+                {/* Coupon */}
+                {showCoupon && (
+                  <div className="border border-slate-200 rounded-xl p-4">
+                    <h4 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                      <FiTag className="w-4 h-4" />
+                      Apply Coupon
+                    </h4>
 
-                    <div className="p-2">
-                      <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all"
-                          style={{
-                            width: `${
-                              safeNum(tournament.maxParticipants, 0) > 0
-                                ? Math.min(
-                                    100,
-                                    (safeNum(tournament.currentParticipants, 0) / safeNum(tournament.maxParticipants, 0)) * 100
-                                  )
-                                : 0
-                            }%`
-                          }}
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <div className="flex-1">
+                        <Input
+                          value={couponCode}
+                          onChange={(e) => setCouponCode(e.target.value)}
+                          placeholder="Enter coupon code (RBM50)"
+                          icon={<FiTag className="w-4 h-4" />}
                         />
                       </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
 
-              {/* Coupon Section */}
-              {showCoupon && (
-                <div className="border border-gray-200 rounded-lg p-4 sm:p-5">
-                  <h4 className="font-semibold text-gray-800 text-sm sm:text-base mb-3 flex items-center gap-2">
-                    <FiTag className="w-4 h-4 text-blue-600" />
-                    Apply Coupon
-                  </h4>
-
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <div className="flex-1">
-                      <Input
-                        value={couponCode}
-                        onChange={(e) => setCouponCode(e.target.value)}
-                        placeholder="Enter coupon code (RBM50)"
-                        icon={<FiTag className="w-4 h-4" />}
-                        className="text-sm"
-                      />
+                      <Button
+                        variant="outline"
+                        onClick={applyCoupon}
+                        disabled={!couponCode || verifyingCoupon}
+                        loading={verifyingCoupon}
+                        className="sm:w-auto"
+                        type="button"
+                      >
+                        Apply
+                      </Button>
                     </div>
 
-                    <Button
-                      variant="outline"
-                      onClick={applyCoupon}
-                      disabled={!couponCode || verifyingCoupon}
-                      loading={verifyingCoupon}
-                      className="sm:w-auto border-blue-600 text-blue-600 hover:bg-blue-50 font-semibold text-sm py-2.5"
-                      type="button"
-                    >
-                      Apply
-                    </Button>
-                  </div>
+                    {couponInfo && (
+                      <div className="mt-3 p-3 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 text-green-700">
+                            <FiCheckCircle className="w-5 h-5" />
+                            <div>
+                              <div className="font-medium">Coupon Applied!</div>
+                              <div className="text-xs text-green-600">
+                                Discount: ₹{safeNum(couponInfo.discountAmount, 0)}
+                              </div>
+                            </div>
+                          </div>
 
-                  {couponInfo && (
-                    <div className="mt-3 p-3 sm:p-4 bg-gradient-to-r from-green-50 to-green-50 border border-green-200 rounded-lg">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div className="flex items-center gap-2 text-green-700">
-                          <FiCheckCircle className="w-5 h-5" />
-                          <div>
-                            <div className="font-semibold text-sm sm:text-base">Coupon Applied!</div>
-                            <div className="text-xs text-green-600">
-                              Discount: ₹{safeNum(couponInfo.discountAmount, 0)}
+                          <div className="text-right">
+                            <div className="text-sm text-green-600 line-through">₹{baseAmount}</div>
+                            <div className="text-xl font-bold text-green-700">
+                              ₹{safeNum(couponInfo.finalAmount, baseAmount)}
                             </div>
                           </div>
                         </div>
-
-                        <div className="text-right">
-                          <div className="text-xs text-gray-500 line-through">₹{baseAmount}</div>
-                          <div className="text-lg sm:text-xl font-bold text-green-700">
-                            ₹{safeNum(couponInfo.finalAmount, baseAmount)}
-                          </div>
-                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-
-          {/* ===== TEAMMATES TAB ===== */}
-          {activeTab === "teammates" && (tournament.tournamentType === "duo" || tournament.tournamentType === "squad") && (
-            <div className="space-y-5 sm:space-y-6">
-              
-              {/* Captain Info */}
-              <div className="bg-gradient-to-r from-blue-50 to-blue-50 border border-blue-200 rounded-lg p-4">
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          {/* TEAMMATES */}
+            {activeTab === "teammates" && (tournament.tournamentType === "duo" || tournament.tournamentType === "squad") && (
+              <div className="space-y-6">
+              {/* Captain info */}
+              <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4">
                 <div className="flex items-start gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 flex items-center justify-center flex-shrink-0">
-                    <FaCrown className="w-5 h-5 text-white" />
+                  <div className="h-10 w-10 rounded-lg bg-gradient-to-r from-green-500 to-emerald-500 flex items-center justify-center">
+                    <FiUsers className="w-5 h-5 text-white" />
                   </div>
 
                   <div className="flex-1">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center justify-between">
                       <div>
-                        <h4 className="font-semibold text-gray-800 text-sm sm:text-base">Your Details (Captain)</h4>
-                        <p className="text-xs text-gray-600 mt-0.5">
+                        <h4 className="font-semibold text-slate-800">Your Details (Captain)</h4>
+                        <p className="text-sm text-slate-600 mt-1">
                           Your information is automatically added as captain.
                         </p>
                       </div>
-                      <div className="bg-blue-100 text-blue-700 text-xs font-semibold px-2 py-1 rounded-md self-start sm:self-auto">
+                      <div className="bg-green-100 text-green-800 text-xs font-medium px-2 py-1 rounded">
                         AUTO-FILLED
                       </div>
                     </div>
 
-                    <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="bg-white p-3 rounded-lg border border-blue-200">
-                        <div className="text-[10px] sm:text-xs text-gray-500 mb-1">Your BGMI ID</div>
-                        <div className="font-medium text-gray-800 text-xs sm:text-sm flex items-center gap-2">
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="bg-white p-3 rounded-lg border border-green-100">
+                        <div className="text-xs text-slate-500 mb-1">Your BGMI ID</div>
+                        <div className="font-medium text-slate-800 flex items-center gap-2">
                           {user.bgmiId || "Not set"}
                           {user.bgmiId && <FiCheckCircle className="w-4 h-4 text-green-500" />}
                         </div>
                       </div>
-                      <div className="bg-white p-3 rounded-lg border border-blue-200">
-                        <div className="text-[10px] sm:text-xs text-gray-500 mb-1">Your In-Game Name</div>
-                        <div className="font-medium text-gray-800 text-xs sm:text-sm flex items-center gap-2">
+                      <div className="bg-white p-3 rounded-lg border border-green-100">
+                        <div className="text-xs text-slate-500 mb-1">Your In-Game Name</div>
+                        <div className="font-medium text-slate-800 flex items-center gap-2">
                           {user.inGameName || "Not set"}
                           {user.inGameName && <FiCheckCircle className="w-4 h-4 text-green-500" />}
                         </div>
@@ -597,31 +573,30 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
                 </div>
               </div>
 
-              {/* Team Name (Squad Only) */}
+              {/* Team name */}
               {tournament.tournamentType === "squad" && (
                 <Input
                   label="Team Name (Optional)"
                   value={teamName}
                   onChange={(e) => setTeamName(e.target.value)}
                   placeholder="Enter your team name (e.g., RBM Warriors)"
-                  className="text-sm"
                 />
               )}
 
-              {/* Duo Form */}
+              {/* Duo */}
               {tournament.tournamentType === "duo" && (
-                <div className="border border-gray-200 rounded-lg p-4 hover:border-blue-300 transition-colors">
+                <div className="border border-slate-200 rounded-xl p-4 hover:border-amber-300 transition-colors">
                   <div className="flex items-center gap-2 mb-3">
-                    <div className="h-8 w-8 rounded-lg bg-gradient-to-r from-blue-100 to-blue-50 flex items-center justify-center">
-                      <BsFillPeopleFill className="w-4 h-4 text-blue-600" />
+                    <div className="h-8 w-8 rounded-lg bg-gradient-to-r from-amber-100 to-orange-100 flex items-center justify-center">
+                      <span className="font-bold text-amber-700">P</span>
                     </div>
                     <div>
-                      <span className="font-semibold text-gray-800 text-sm sm:text-base">Partner</span>
-                      <div className="text-xs text-gray-500">Your duo partner</div>
+                      <span className="font-medium text-slate-800">Partner</span>
+                      <div className="text-xs text-slate-500">Your duo partner</div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <Input
                       label="Partner BGMI ID"
                       value={partnerBgmiId}
@@ -629,7 +604,6 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
                       placeholder="Enter partner's BGMI ID"
                       error={formErrors.partnerBgmiId}
                       required
-                      className="text-sm"
                     />
                     <Input
                       label="Partner In-Game Name"
@@ -638,27 +612,26 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
                       placeholder="Enter partner's in-game name"
                       error={formErrors.partnerInGameName}
                       required
-                      className="text-sm"
                     />
                   </div>
                 </div>
               )}
 
-              {/* Squad Members */}
+              {/* Squad */}
               {tournament.tournamentType === "squad" &&
                 members.map((member, index) => (
-                  <div key={index} className="border border-gray-200 rounded-lg p-4 hover:border-blue-300 transition-colors">
+                  <div key={index} className="border border-slate-200 rounded-xl p-4 hover:border-blue-300 transition-colors">
                     <div className="flex items-center gap-2 mb-3">
-                      <div className="h-8 w-8 rounded-lg bg-gradient-to-r from-blue-100 to-blue-50 flex items-center justify-center">
-                        <span className="font-bold text-blue-600 text-sm">{index + 1}</span>
+                      <div className="h-8 w-8 rounded-lg bg-gradient-to-r from-blue-100 to-cyan-100 flex items-center justify-center">
+                        <span className="font-bold text-blue-600">{index + 1}</span>
                       </div>
                       <div>
-                        <span className="font-semibold text-gray-800 text-sm sm:text-base">Teammate {index + 1}</span>
-                        <div className="text-xs text-gray-500">Required</div>
+                        <span className="font-medium text-slate-800">Teammate {index + 1}</span>
+                        <div className="text-xs text-slate-500">Required</div>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <Input
                         label="BGMI ID"
                         value={member.bgmiId}
@@ -669,7 +642,6 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
                         placeholder="Enter teammate's BGMI ID"
                         error={formErrors[`member${index}BgmiId`]}
                         required
-                        className="text-sm"
                       />
                       <Input
                         label="In-Game Name"
@@ -681,18 +653,16 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
                         placeholder="Enter teammate's in-game name"
                         error={formErrors[`member${index}InGameName`]}
                         required
-                        className="text-sm"
                       />
                     </div>
                   </div>
                 ))}
 
-              {/* Important Note */}
-              <div className="flex items-start gap-2 text-xs text-gray-600 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                <FiInfo className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div className="flex items-start gap-2 text-sm text-slate-600 p-3 bg-slate-50 rounded-lg">
+                <FiInfo className="w-4 h-4 mt-0.5 flex-shrink-0" />
                 <div>
-                  <div className="font-semibold text-gray-700 mb-1 text-xs sm:text-sm">Important:</div>
-                  <ul className="space-y-1 text-gray-600 text-xs">
+                  <div className="font-medium text-slate-700 mb-1">Important:</div>
+                  <ul className="space-y-1 text-slate-600">
                     <li>• Details must be correct (changes not allowed later)</li>
                     <li>• All BGMI IDs must be unique</li>
                     <li>• You are registered as captain automatically</li>
@@ -701,157 +671,157 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
               </div>
             </div>
           )}
-
-          {/* ===== PAYMENT TAB ===== */}
-          {activeTab === "payment" && (
-            <div className="space-y-5">
-              <div className="border border-gray-200 rounded-lg p-5">
-                <div className="flex items-center justify-between mb-5">
-                  <h4 className="font-semibold text-gray-800 text-sm sm:text-base flex items-center gap-2">
-                    <FiCreditCard className="w-5 h-5 text-blue-600" />
-                    Payment Summary
-                  </h4>
-                  <div className="flex items-center gap-1 text-green-600 text-xs">
-                    <MdSecurity className="w-4 h-4" />
-                    <span className="font-medium">Secure</span>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg text-sm">
-                    <div className="text-gray-700">Entry Fee</div>
-                    <div className="font-medium text-gray-900">₹{baseAmount}</div>
-                  </div>
-
-                  {discount > 0 && (
-                    <div className="flex justify-between items-center p-3 bg-green-50 rounded-lg text-sm">
-                      <div className="text-green-700">Discount</div>
-                      <div className="font-medium text-green-600">-₹{discount}</div>
+            {/* PAYMENT */}
+            {activeTab === "payment" && (
+              <div className="space-y-6">
+                <div className="border border-slate-200 rounded-xl p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <h4 className="font-semibold text-slate-800 flex items-center gap-2">
+                      <FiCreditCard className="w-5 h-5" />
+                      Payment Summary
+                    </h4>
+                    <div className="flex items-center gap-2 text-green-600">
+                      <FiShield className="w-4 h-4" />
+                      <span className="text-sm font-medium">Secure</span>
                     </div>
-                  )}
-
-                  <div className="h-px bg-gray-200"></div>
-
-                  <div className="flex justify-between items-center p-3 bg-gradient-to-r from-blue-50 to-blue-50 rounded-lg">
-                    <div className="text-base sm:text-lg font-bold text-gray-800">Total Payable</div>
-                    <div className="text-xl sm:text-2xl font-bold text-blue-600">₹{payable}</div>
                   </div>
-                </div>
 
-                {payable === 0 ? (
-                  <div className="mt-5 p-4 bg-gradient-to-r from-green-50 to-green-50 border border-green-200 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <FiCheckCircle className="w-6 h-6 sm:w-8 sm:h-8 text-green-600" />
-                      <div>
-                        <div className="font-bold text-green-800 text-sm sm:text-base">Free / ₹0 Payable</div>
-                        <div className="text-xs text-green-700 mt-1">No payment required. Confirm registration to join.</div>
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
+                      <div className="text-slate-700">Entry Fee</div>
+                      <div className="font-medium">₹{baseAmount}</div>
+                    </div>
+
+                    {discount > 0 && (
+                      <div className="flex justify-between items-center p-3 bg-green-50 rounded-lg">
+                        <div className="text-green-700">Discount</div>
+                        <div className="font-medium text-green-600">-₹{discount}</div>
                       </div>
+                    )}
+
+                    <div className="h-px bg-slate-200"></div>
+
+                    <div className="flex justify-between items-center p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg">
+                      <div className="text-lg font-bold text-slate-800">Total Payable</div>
+                      <div className="text-2xl font-bold text-blue-600">₹{payable}</div>
                     </div>
                   </div>
-                ) : (
-                  <div className="mt-5 p-4 bg-gradient-to-r from-blue-50 to-blue-50 border border-blue-200 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <FiCreditCard className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600" />
-                      <div>
-                        <div className="font-bold text-blue-800 text-sm sm:text-base">Razorpay Payment</div>
-                        <div className="text-xs text-blue-700 mt-1">
-                          You will be redirected to the payments page after registration.
+
+                  {payable === 0 ? (
+                    <div className="mt-6 p-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <FiCheckCircle className="w-8 h-8 text-green-600" />
+                        <div>
+                          <div className="font-bold text-green-800">Free / ₹0 Payable</div>
+                          <div className="text-sm text-green-700 mt-1">No payment required. Confirm registration to join.</div>
                         </div>
                       </div>
                     </div>
+                  ) : (
+                    <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <FiInfo className="w-8 h-8 text-blue-600" />
+                        <div>
+                          <div className="font-bold text-blue-800">Manual UPI Payment</div>
+                          <div className="text-sm text-blue-700 mt-1">
+                            Proceed will open UPI + UTR submit popup (no redirect).
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Sticky actions */}
+          <div className="sticky bottom-0 bg-white pt-4 border-t border-slate-200 -mx-6 -mb-6 px-6 pb-6">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="text-sm text-slate-600">
+                {payable === 0 ? (
+                  <div className="flex items-center gap-2">
+                    <FiCheckCircle className="w-4 h-4 text-green-500" />
+                    <span className="font-medium text-green-600">No payment required</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <FiDollarSign className="w-4 h-4 text-blue-500" />
+                    <span>
+                      Total: <span className="font-bold text-blue-600">₹{payable}</span>
+                    </span>
                   </div>
                 )}
               </div>
-            </div>
-          )}
-        </div>
 
-        {/* ===== STICKY ACTION BUTTONS ===== */}
-        <div className="sticky bottom-0 bg-white pt-4 border-t border-gray-200 -mx-5 sm:-mx-6 -mb-5 sm:-mb-6 px-5 sm:px-6 pb-5 sm:pb-6">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="text-xs sm:text-sm text-gray-600">
-              {payable === 0 ? (
-                <div className="flex items-center gap-2">
-                  <FiCheckCircle className="w-4 h-4 text-green-500" />
-                  <span className="font-medium text-green-600">No payment required</span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <FiDollarSign className="w-4 h-4 text-blue-500" />
-                  <span>
-                    Total: <span className="font-bold text-blue-600">₹{payable}</span>
-                  </span>
-                </div>
-              )}
-            </div>
+              <div className="flex gap-3 w-full sm:w-auto">
+                {activeTab !== "details" ? (
+                  <Button
+                    variant="outline"
+                    type="button"
+                    onClick={() => {
+                      const tabIndex = tabs.findIndex((t) => t.key === activeTab);
+                      if (tabIndex > 0) setActiveTab(tabs[tabIndex - 1].key);
+                    }}
+                    className="flex-1 sm:flex-none"
+                  >
+                    Back
+                  </Button>
+                ) : (
+                  <Button variant="outline" type="button" onClick={onClose} className="flex-1 sm:flex-none">
+                    Cancel
+                  </Button>
+                )}
 
-            <div className="flex gap-3 w-full sm:w-auto">
-              {activeTab !== "details" ? (
-                <Button
-                  variant="outline"
-                  type="button"
-                  onClick={() => {
-                    const tabIndex = tabs.findIndex((t) => t.key === activeTab);
-                    if (tabIndex > 0) setActiveTab(tabs[tabIndex - 1].key);
-                  }}
-                  className="flex-1 sm:flex-none border-gray-300 text-gray-700 hover:bg-gray-50 text-xs sm:text-sm font-semibold py-2.5"
-                >
-                  Back
-                </Button>
-              ) : (
-                <Button 
-                  variant="outline" 
-                  type="button" 
-                  onClick={onClose} 
-                  className="flex-1 sm:flex-none border-gray-300 text-gray-700 hover:bg-gray-50 text-xs sm:text-sm font-semibold py-2.5"
-                >
-                  Cancel
-                </Button>
-              )}
-
-              {activeTab !== "payment" ? (
-                <Button
-                  type="button"
-                  onClick={() => {
-                    const tabIndex = tabs.findIndex((t) => t.key === activeTab);
-                    if (tabIndex < tabs.length - 1) setActiveTab(tabs[tabIndex + 1].key);
-                  }}
-                  className="flex-1 sm:flex-none bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-xs sm:text-sm font-semibold py-2.5 shadow-md"
-                  disabled={
-                    !isRegistrationOpen ||
-                    Boolean(formErrors.profile) ||
-                    (tournament.tournamentType === "duo" && (!partnerBgmiId.trim() || !partnerInGameName.trim())) ||
-                    (tournament.tournamentType === "squad" && members.some((m) => !m.bgmiId.trim() || !m.inGameName.trim()))
-                  }
-                >
-                  Continue
-                  <FiArrowRight className="w-4 h-4 ml-2" />
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  onClick={registerNow}
-                  loading={loading}
-                  disabled={!isRegistrationOpen}
-                  className="flex-1 sm:flex-none bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-xs sm:text-sm font-semibold py-2.5 shadow-lg hover:shadow-xl"
-                >
-                  {payable === 0 ? (
-                    <>
-                      <GiConfirmed className="w-4 h-4 mr-2" />
-                      Confirm Registration
-                    </>
-                  ) : (
-                    <>
-                      <FiCreditCard className="w-4 h-4 mr-2" />
-                      Proceed to Payment
-                    </>
-                  )}
-                </Button>
-              )}
+                {activeTab !== "payment" ? (
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      const tabIndex = tabs.findIndex((t) => t.key === activeTab);
+                      if (tabIndex < tabs.length - 1) setActiveTab(tabs[tabIndex + 1].key);
+                    }}
+                    className="flex-1 sm:flex-none"
+                    disabled={
+                      !isRegistrationOpen ||
+                      Boolean(formErrors.profile) ||
+                      (tournament.tournamentType === "duo" && (!partnerBgmiId.trim() || !partnerInGameName.trim())) ||
+                      (tournament.tournamentType === "squad" && members.some((m) => !m.bgmiId.trim() || !m.inGameName.trim()))
+                    }
+                  >
+                    Continue
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    onClick={registerNow}
+                    loading={loading}
+                    disabled={!isRegistrationOpen}
+                    className="flex-1 sm:flex-none bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 shadow-lg hover:shadow-xl"
+                  >
+                    {payable === 0 ? "Confirm Registration" : "Proceed"}
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
+
+          {/* close icon slot for header if your Modal supports custom close */}
+          <button className="hidden" type="button">
+            <FiXCircle />
+          </button>
         </div>
-      </div>
-    </Modal>
+      </Modal>
+
+      <ManualPaymentModal
+        open={manualOpen}
+        onClose={() => {
+          setManualOpen(false);
+          setManualCtx(null);
+        }}
+        paymentId={manualCtx?.paymentId}
+        amount={manualCtx?.amount}
+        tournamentTitle={manualCtx?.tournamentTitle}
+      />
+    </>
   );
 }

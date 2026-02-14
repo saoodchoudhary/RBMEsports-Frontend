@@ -1,5 +1,5 @@
 "use client";
-
+import JoinTournamentModal from "@/components/tournaments/JoinTournamentModal";
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import TournamentCard from "@/components/tournaments/TournamentCard";
@@ -61,11 +61,21 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("live");
 
+  // ✅ NEW: join modal state (home page se open)
+  const [joinOpen, setJoinOpen] = useState(false);
+  const [selectedTournament, setSelectedTournament] = useState(null);
+
   const [data, setData] = useState({
     tournaments: [],
     winners: [],
     featuredTournaments: []
   });
+
+  // ✅ NEW: join handler
+  function handleJoin(tournament) {
+    setSelectedTournament(tournament);
+    setJoinOpen(true);
+  }
 
   useEffect(() => {
     async function loadData() {
@@ -92,9 +102,7 @@ export default function HomePage() {
   }, []);
 
   const ongoing = useMemo(() => {
-    return (data.tournaments || []).filter((t) =>
-      ["registration_open", "ongoing"].includes(t.status)
-    );
+    return (data.tournaments || []).filter((t) => ["registration_open", "ongoing"].includes(t.status));
   }, [data.tournaments]);
 
   const upcoming = useMemo(() => {
@@ -128,7 +136,6 @@ export default function HomePage() {
     <div className="w-full">
       <div className=" ">
         <div className="space-y-12 sm:space-y-16 lg:space-y-20">
-          
           {/* ===== HERO SECTION - CLASSIC PROFESSIONAL DESIGN ===== */}
           <section className="relative overflow-hidden bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl sm:rounded-3xl shadow-2xl">
             <div className="absolute inset-0">
@@ -140,14 +147,15 @@ export default function HomePage() {
 
             <div className="relative z-10 px-4 sm:px-6 lg:px-8 py-8 sm:py-10 lg:py-12">
               <div className="flex flex-col lg:flex-row items-center gap-8 lg:gap-12">
-                
                 {/* Left Content */}
                 <div className="flex-1 w-full">
                   {/* YouTube Live Badge */}
                   <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4 sm:mb-5 lg:mb-6">
                     <div className="inline-flex items-center gap-1.5 sm:gap-2 bg-red-600 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full shadow-lg">
                       <FaYoutube className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
-                      <span className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">LIVE ON YOUTUBE</span>
+                      <span className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">
+                        LIVE ON YOUTUBE
+                      </span>
                     </div>
                     <div className="inline-flex items-center gap-1.5 bg-blue-600/20 backdrop-blur-sm px-3 sm:px-4 py-1.5 sm:py-2 rounded-full border border-blue-500/30">
                       <BsBroadcast className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-400" />
@@ -165,8 +173,8 @@ export default function HomePage() {
                   </h1>
 
                   <p className="text-sm sm:text-base lg:text-lg text-gray-300 leading-relaxed mb-5 sm:mb-6 lg:mb-7 max-w-xl">
-                    India's #1 BGMI Tournament Platform. Compete with elite players, 
-                    win massive prizes, and get featured live on our official YouTube channel.
+                    India's #1 BGMI Tournament Platform. Compete with elite players, win massive prizes, and
+                    get featured live on our official YouTube channel.
                   </p>
 
                   {/* Live Stream Card */}
@@ -182,7 +190,9 @@ export default function HomePage() {
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="text-white font-bold text-xs sm:text-sm">RBM ESPORTS LIVE</span>
-                            <span className="bg-red-600 text-white text-[10px] sm:text-xs px-1.5 py-0.5 rounded-full font-bold">LIVE</span>
+                            <span className="bg-red-600 text-white text-[10px] sm:text-xs px-1.5 py-0.5 rounded-full font-bold">
+                              LIVE
+                            </span>
                           </div>
                           <p className="text-xs text-gray-400">Weekend Championship • Finals</p>
                         </div>
@@ -215,7 +225,9 @@ export default function HomePage() {
                           <GiTrophy className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" />
                         </div>
                         <div>
-                          <div className="text-lg sm:text-xl lg:text-2xl font-bold text-white">{computedStats.totalTournaments}+</div>
+                          <div className="text-lg sm:text-xl lg:text-2xl font-bold text-white">
+                            {computedStats.totalTournaments}+
+                          </div>
                           <div className="text-[10px] sm:text-xs text-gray-400 uppercase tracking-wider">Events</div>
                         </div>
                       </div>
@@ -226,7 +238,9 @@ export default function HomePage() {
                           <FiDollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-gray-300" />
                         </div>
                         <div>
-                          <div className="text-lg sm:text-xl lg:text-2xl font-bold text-white">₹{(computedStats.totalPrize / 100000).toFixed(1)}L+</div>
+                          <div className="text-lg sm:text-xl lg:text-2xl font-bold text-white">
+                            ₹{(computedStats.totalPrize / 100000).toFixed(1)}L+
+                          </div>
                           <div className="text-[10px] sm:text-xs text-gray-400 uppercase tracking-wider">Prize Pool</div>
                         </div>
                       </div>
@@ -237,7 +251,9 @@ export default function HomePage() {
                           <BsPeopleFill className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" />
                         </div>
                         <div>
-                          <div className="text-lg sm:text-xl lg:text-2xl font-bold text-white">{computedStats.totalPlayers}+</div>
+                          <div className="text-lg sm:text-xl lg:text-2xl font-bold text-white">
+                            {computedStats.totalPlayers}+
+                          </div>
                           <div className="text-[10px] sm:text-xs text-gray-400 uppercase tracking-wider">Players</div>
                         </div>
                       </div>
@@ -293,6 +309,7 @@ export default function HomePage() {
                     </div>
                   </div>
                 </div>
+
               </div>
             </div>
           </section>
@@ -308,7 +325,9 @@ export default function HomePage() {
                   <div>
                     <div className="flex items-center gap-2 mb-0.5">
                       <h3 className="text-white font-bold text-sm sm:text-base">RBM ESPORTS OFFICIAL STREAM</h3>
-                      <span className="bg-red-600 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold animate-pulse">LIVE</span>
+                      <span className="bg-red-600 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold animate-pulse">
+                        LIVE
+                      </span>
                     </div>
                     <p className="text-xs sm:text-sm text-gray-400">
                       🎮 Weekend Championship Finals • Prize Pool ₹2,50,000 • 16 Teams
@@ -373,6 +392,7 @@ export default function HomePage() {
                     </span>
                   )}
                 </button>
+
                 <button
                   onClick={() => setActiveTab("upcoming")}
                   className={`
@@ -387,6 +407,7 @@ export default function HomePage() {
                   <FiCalendar className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   UPCOMING
                 </button>
+
                 <button
                   onClick={() => setActiveTab("featured")}
                   className={`
@@ -410,7 +431,11 @@ export default function HomePage() {
                 ongoing.length > 0 ? (
                   <div className="grid gap-4 sm:gap-5 lg:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                     {ongoing.slice(0, 6).map((tournament) => (
-                      <TournamentCard key={tournament._id} t={tournament} />
+                      <TournamentCard
+                        key={tournament._id}
+                        t={tournament}
+                        onJoin={handleJoin} // ✅ NEW
+                      />
                     ))}
                   </div>
                 ) : (
@@ -436,7 +461,11 @@ export default function HomePage() {
                 upcoming.length > 0 ? (
                   <div className="grid gap-4 sm:gap-5 lg:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                     {upcoming.slice(0, 6).map((tournament) => (
-                      <TournamentCard key={tournament._id} t={tournament} />
+                      <TournamentCard
+                        key={tournament._id}
+                        t={tournament}
+                        onJoin={handleJoin} // ✅ NEW
+                      />
                     ))}
                   </div>
                 ) : (
@@ -462,7 +491,11 @@ export default function HomePage() {
                 data.featuredTournaments.length > 0 ? (
                   <div className="grid gap-4 sm:gap-5 lg:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                     {data.featuredTournaments.slice(0, 6).map((tournament) => (
-                      <TournamentCard key={tournament._id} t={tournament} />
+                      <TournamentCard
+                        key={tournament._id}
+                        t={tournament}
+                        onJoin={handleJoin} // ✅ NEW
+                      />
                     ))}
                   </div>
                 ) : (
@@ -849,6 +882,16 @@ export default function HomePage() {
           </section>
         </div>
       </div>
+
+      {/* ✅ NEW: Join popup (Home page se direct open) */}
+      <JoinTournamentModal
+        open={joinOpen}
+        onClose={() => {
+          setJoinOpen(false);
+          setSelectedTournament(null);
+        }}
+        tournament={selectedTournament}
+      />
     </div>
   );
 }

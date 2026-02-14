@@ -8,17 +8,11 @@ import { loadRazorpayScript, openRazorpay } from "@/lib/razorpay";
 import { useDispatch, useSelector } from "react-redux";
 import { showToast } from "@/store/uiSlice";
 import {
-  GiWallet,
   GiMoneyStack,
   GiPayMoney,
   GiReceiveMoney,
   GiCash,
-  GiTakeMyMoney,
-  GiTrophy,
-  GiSwordsPower,
-  GiShield,
-  GiBattleGear,
-  GiHelmet
+  GiTakeMyMoney
 } from "react-icons/gi";
 import {
   FiCreditCard,
@@ -30,23 +24,14 @@ import {
   FiRefreshCw,
   FiInfo,
   FiClock,
-  FiTrendingUp,
   FiDollarSign,
   FiLock,
   FiEye,
   FiEyeOff
 } from "react-icons/fi";
-import { 
-  MdPayment, 
-  MdSecurity, 
-  MdAccountBalance, 
-  MdQrCode, 
-  MdVerified,
-  MdOutlineWallet
-} from "react-icons/md";
-import { BsBank, BsPeopleFill } from "react-icons/bs";
-import { FaRupeeSign, FaRegCreditCard, FaGooglePay, FaPaypal, FaAmazonPay } from "react-icons/fa";
-import { RiBankFill, RiSecurePaymentFill } from "react-icons/ri";
+import { MdPayment, MdSecurity, MdAccountBalance, MdQrCode } from "react-icons/md";
+import { BsBank } from "react-icons/bs";
+import { FaRegCreditCard, FaGooglePay } from "react-icons/fa";
 import { IoWalletOutline } from "react-icons/io5";
 import { TbCurrencyRupee, TbBuildingBank } from "react-icons/tb";
 
@@ -106,6 +91,9 @@ function isValidUpi(upi) {
 }
 
 export default function WalletPage() {
+  // ✅ Toggle: disable wallet topup
+  const ADD_MONEY_DISABLED = true;
+
   const [wallet, setWallet] = useState(null);
   const [withdrawals, setWithdrawals] = useState([]);
 
@@ -121,7 +109,7 @@ export default function WalletPage() {
   const [ifscCode, setIfscCode] = useState("");
   const [bankName, setBankName] = useState("");
 
-  const [activeSection, setActiveSection] = useState("add");
+  const [activeSection, setActiveSection] = useState(ADD_MONEY_DISABLED ? "withdraw" : "add");
   const [txFilter, setTxFilter] = useState("all");
   const [showBalance, setShowBalance] = useState(true);
 
@@ -160,6 +148,18 @@ export default function WalletPage() {
   }, [method]);
 
   async function addMoney() {
+    // ✅ hard block
+    if (ADD_MONEY_DISABLED) {
+      dispatch(
+        showToast({
+          title: "Top-up disabled",
+          message: "Wallet add money is currently disabled.",
+          type: "info"
+        })
+      );
+      return;
+    }
+
     try {
       setLoading(true);
       const amt = Number(amount);
@@ -361,7 +361,7 @@ export default function WalletPage() {
                         Manage Your <span className="text-blue-400">Funds</span>
                       </h1>
                       <p className="text-sm sm:text-base text-gray-400 mt-1 max-w-2xl">
-                        Prize money automatically credited here. Secure Razorpay deposits & manual withdrawals.
+                        Prize money automatically credited here. Withdrawals are processed manually.
                       </p>
                     </div>
                   </div>
@@ -390,7 +390,7 @@ export default function WalletPage() {
                     </div>
                     <div className="flex items-center gap-2 text-xs text-blue-200">
                       <FiShieldIcon className="w-3.5 h-3.5" />
-                      <span>Razorpay signature verified deposits</span>
+                      <span>Prize credits & refunds appear here</span>
                     </div>
                   </div>
                 </div>
@@ -402,23 +402,28 @@ export default function WalletPage() {
           <div className="bg-gray-100 p-1 rounded-xl max-w-md mx-auto">
             <div className="flex">
               <button
-                onClick={() => setActiveSection("add")}
+                onClick={() => {
+                  if (ADD_MONEY_DISABLED) return;
+                  setActiveSection("add");
+                }}
+                disabled={ADD_MONEY_DISABLED}
                 className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg transition-all duration-300 text-sm sm:text-base font-semibold ${
-                  activeSection === "add" 
-                    ? "bg-white text-blue-600 shadow-md" 
+                  activeSection === "add"
+                    ? "bg-white text-blue-600 shadow-md"
                     : "text-gray-600 hover:text-gray-800"
-                }`}
+                } ${ADD_MONEY_DISABLED ? "opacity-60 cursor-not-allowed" : ""}`}
                 type="button"
+                title={ADD_MONEY_DISABLED ? "Add money is disabled" : "Add money"}
               >
-                <FiArrowDownCircle className="w-4 h-4 sm:w-5 sm:h-5" />
+                {ADD_MONEY_DISABLED ? <FiLock className="w-4 h-4 sm:w-5 sm:h-5" /> : <FiArrowDownCircle className="w-4 h-4 sm:w-5 sm:h-5" />}
                 <span>Add Money</span>
               </button>
 
               <button
                 onClick={() => setActiveSection("withdraw")}
                 className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg transition-all duration-300 text-sm sm:text-base font-semibold ${
-                  activeSection === "withdraw" 
-                    ? "bg-white text-gray-900 shadow-md" 
+                  activeSection === "withdraw"
+                    ? "bg-white text-gray-900 shadow-md"
                     : "text-gray-600 hover:text-gray-800"
                 }`}
                 type="button"
@@ -432,7 +437,6 @@ export default function WalletPage() {
           {/* ===== ADD MONEY SECTION ===== */}
           {activeSection === "add" && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
-              
               {/* Add Money Form */}
               <div className="bg-white rounded-xl sm:rounded-2xl border border-gray-200 p-5 sm:p-6 lg:p-8 shadow-md hover:shadow-lg transition-shadow">
                 <div className="flex items-center gap-3 mb-6">
@@ -441,12 +445,24 @@ export default function WalletPage() {
                   </div>
                   <div>
                     <h2 className="text-lg sm:text-xl font-bold text-gray-900">Add Money to Wallet</h2>
-                    <p className="text-xs sm:text-sm text-gray-600">Quick & secure via Razorpay</p>
+                    <p className="text-xs sm:text-sm text-gray-600">Currently disabled</p>
                   </div>
                 </div>
 
-                <div className="space-y-5 sm:space-y-6">
-                  {/* Amount Input */}
+                <div className="bg-gradient-to-r from-amber-50 to-amber-50 border border-amber-200 rounded-lg p-4 mb-5">
+                  <div className="flex items-start gap-3">
+                    <FiLock className="w-5 h-5 text-amber-700 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-semibold text-amber-900 text-sm mb-1">Wallet Top-up Disabled</div>
+                      <div className="text-xs text-amber-800">
+                        Adding money to wallet is temporarily disabled. You can still withdraw prize winnings.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Keep UI but disable controls */}
+                <div className="space-y-5 sm:space-y-6 opacity-60 pointer-events-none">
                   <div>
                     <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
                       Enter Amount (₹)
@@ -463,6 +479,7 @@ export default function WalletPage() {
                         className="pl-10 text-base sm:text-lg font-medium"
                         min="10"
                         max="100000"
+                        disabled
                       />
                     </div>
                     <div className="flex justify-between mt-2 text-xs text-gray-500">
@@ -471,7 +488,6 @@ export default function WalletPage() {
                     </div>
                   </div>
 
-                  {/* Quick Select */}
                   <div>
                     <div className="text-xs sm:text-sm font-medium text-gray-700 mb-3">Quick Select</div>
                     <div className="grid grid-cols-5 gap-2">
@@ -479,12 +495,9 @@ export default function WalletPage() {
                         <button
                           key={amt}
                           onClick={() => setAmount(amt)}
-                          className={`py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all ${
-                            Number(amount) === amt
-                              ? "bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md"
-                              : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                          }`}
+                          className="py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-semibold bg-gray-100 text-gray-700"
                           type="button"
+                          disabled
                         >
                           ₹{amt}
                         </button>
@@ -492,7 +505,6 @@ export default function WalletPage() {
                     </div>
                   </div>
 
-                  {/* Security Note */}
                   <div className="bg-gradient-to-r from-blue-50 to-blue-50 border border-blue-200 rounded-lg p-4">
                     <div className="flex items-start gap-3">
                       <MdSecurity className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
@@ -505,16 +517,15 @@ export default function WalletPage() {
                     </div>
                   </div>
 
-                  {/* Submit Button */}
                   <Button
                     onClick={addMoney}
-                    disabled={loading}
+                    disabled
                     loading={loading}
-                    className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg hover:shadow-xl py-3 sm:py-4 text-sm sm:text-base font-bold"
+                    className="w-full bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg py-3 sm:py-4 text-sm sm:text-base font-bold"
                     type="button"
                   >
                     <FiCreditCard className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
-                    {loading ? "Processing..." : "Proceed to Payment"}
+                    Proceed to Payment
                   </Button>
                 </div>
               </div>
@@ -527,11 +538,11 @@ export default function WalletPage() {
                   </div>
                   <div>
                     <h2 className="text-lg sm:text-xl font-bold text-gray-900">Accepted Payment Methods</h2>
-                    <p className="text-xs sm:text-sm text-gray-600">All major options supported</p>
+                    <p className="text-xs sm:text-sm text-gray-600">Top-up is disabled</p>
                   </div>
                 </div>
 
-                <div className="space-y-3 sm:space-y-4">
+                <div className="space-y-3 sm:space-y-4 opacity-60">
                   <div className="flex items-center justify-between p-3 sm:p-4 bg-gradient-to-r from-blue-50 to-blue-50 rounded-lg border border-blue-200">
                     <div className="flex items-center gap-3">
                       <FaRegCreditCard className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
@@ -581,7 +592,7 @@ export default function WalletPage() {
                   <div className="flex items-start gap-2">
                     <FiInfo className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
                     <div className="text-xs text-gray-700">
-                      <span className="font-semibold">Note:</span> Wallet topups credited only after Razorpay signature verification.
+                      <span className="font-semibold">Note:</span> Wallet top-ups are currently disabled by admin.
                     </div>
                   </div>
                 </div>
@@ -592,7 +603,6 @@ export default function WalletPage() {
           {/* ===== WITHDRAW SECTION ===== */}
           {activeSection === "withdraw" && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
-              
               {/* Withdraw Form */}
               <div className="bg-white rounded-xl sm:rounded-2xl border border-gray-200 p-5 sm:p-6 lg:p-8 shadow-md hover:shadow-lg transition-shadow">
                 <div className="flex items-center gap-3 mb-6">
@@ -606,7 +616,6 @@ export default function WalletPage() {
                 </div>
 
                 <div className="space-y-5 sm:space-y-6">
-                  {/* Amount Input */}
                   <div>
                     <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
                       Withdrawal Amount (₹)
@@ -630,7 +639,6 @@ export default function WalletPage() {
                     </div>
                   </div>
 
-                  {/* Balance Info */}
                   <div className="bg-gradient-to-r from-gray-50 to-gray-50 border border-gray-200 rounded-lg p-4">
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-gray-700">Available Balance:</span>
@@ -647,7 +655,6 @@ export default function WalletPage() {
                     )}
                   </div>
 
-                  {/* Withdrawal Method */}
                   <div>
                     <div className="flex items-center gap-2 mb-3">
                       <GiPayMoney className="w-4 h-4 text-gray-600" />
@@ -682,7 +689,6 @@ export default function WalletPage() {
                     </div>
                   </div>
 
-                  {/* Submit Button */}
                   <Button
                     onClick={requestWithdraw}
                     className="w-full bg-gradient-to-r from-gray-800 to-gray-900 hover:from-gray-900 hover:to-black text-white shadow-lg hover:shadow-xl py-3 sm:py-4 text-sm sm:text-base font-bold"
@@ -693,7 +699,6 @@ export default function WalletPage() {
                     Request Withdrawal
                   </Button>
 
-                  {/* Warning Note */}
                   <div className="bg-gradient-to-r from-amber-50 to-amber-50 border border-amber-200 rounded-lg p-3">
                     <div className="flex items-start gap-2">
                       <FiAlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
@@ -729,9 +734,7 @@ export default function WalletPage() {
                         placeholder="yourname@upi"
                         className="text-sm"
                       />
-                      <div className="text-xs text-gray-500 mt-2">
-                        Example: name@okicici, name@ybl
-                      </div>
+                      <div className="text-xs text-gray-500 mt-2">Example: name@okicici, name@ybl</div>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -831,7 +834,6 @@ export default function WalletPage() {
                 </div>
               </div>
 
-              {/* Filter Buttons */}
               <div className="flex flex-wrap gap-2">
                 {["all", "deposit", "prize_won", "tournament_fee", "withdrawal", "refund"].map((k) => (
                   <button
@@ -857,7 +859,7 @@ export default function WalletPage() {
                 </div>
                 <h3 className="text-base sm:text-lg font-bold text-gray-700 mb-2">No Transactions</h3>
                 <p className="text-xs sm:text-sm text-gray-600 max-w-md mx-auto">
-                  Transactions appear after deposits, prize credits, fees, withdrawals, or refunds.
+                  Transactions appear after prize credits, fees, withdrawals, or refunds.
                 </p>
               </div>
             ) : (
@@ -913,9 +915,9 @@ export default function WalletPage() {
                 </div>
               </div>
 
-              <Button 
-                variant="outline" 
-                onClick={load} 
+              <Button
+                variant="outline"
+                onClick={load}
                 className="border-gray-300 text-gray-700 hover:bg-gray-50 text-sm py-2 px-4"
                 type="button"
               >
@@ -931,8 +933,8 @@ export default function WalletPage() {
             ) : (
               <div className="space-y-2">
                 {withdrawals.map((w) => (
-                  <div 
-                    key={w._id} 
+                  <div
+                    key={w._id}
                     className="p-4 rounded-lg border border-gray-200 hover:border-gray-300 transition flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
                   >
                     <div>
@@ -969,8 +971,7 @@ export default function WalletPage() {
             <div className="flex items-start gap-2">
               <FiInfo className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
               <div>
-                <span className="font-semibold text-blue-800">Flow summary:</span> Add money: Razorpay order → payment → backend signature verify → wallet credited.
-                Withdraw: request stored in pendingWithdrawals, admin manually pays via UPI/Bank.
+                <span className="font-semibold text-blue-800">Flow summary:</span> Withdraw: request stored in pendingWithdrawals, admin manually pays via UPI/Bank.
               </div>
             </div>
           </section>

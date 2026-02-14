@@ -13,7 +13,16 @@ export function getAuthToken() {
   return localStorage.getItem(TOKEN_KEY);
 }
 
+function assertApiBase() {
+  if (!API_BASE) {
+    throw new Error(
+      "NEXT_PUBLIC_API_BASE_URL is not set. Please set it in your frontend .env (e.g. NEXT_PUBLIC_API_BASE_URL=https://your-backend.com/api)"
+    );
+  }
+}
+
 async function request(path, { method = "GET", body, headers } = {}) {
+  assertApiBase();
   const token = getAuthToken();
 
   const res = await fetch(`${API_BASE}${path}`, {
@@ -41,12 +50,36 @@ async function request(path, { method = "GET", body, headers } = {}) {
   return data;
 }
 
+/**
+ * Some APIs may not exist in all backend versions.
+ * This helper tries multiple endpoints until one works.
+ */
+async function requestFirstSuccessful(paths, options) {
+  let lastErr = null;
+
+  for (const p of paths) {
+    try {
+      return await request(p, options);
+    } catch (e) {
+      lastErr = e;
+      // try next
+    }
+  }
+
+  throw lastErr || new Error("Request failed");
+}
+
 export const api = {
   // Auth
   register: (payload) => request("/auth/register", { method: "POST", body: payload }),
   login: (payload) => request("/auth/login", { method: "POST", body: payload }),
   logout: () => request("/auth/logout", { method: "POST" }),
   me: () => request("/auth/me"),
+
+
+  // -------
+
+
 
   // Tournaments
   listTournaments: (qs = "") => request(`/tournaments${qs}`),
@@ -101,7 +134,65 @@ export const api = {
   adminWithdrawals: (qs="") => request(`/admin/withdrawals${qs}`),
   adminProcessWithdrawal: (walletId, withdrawalId, payload) =>
     request(`/admin/withdrawals/${walletId}/${withdrawalId}`, { method: "PUT", body: payload }),
-  adminWalletStats: () => request("/admin/wallet-stats")
+  adminWalletStats: () => request("/admin/wallet-stats"),
+
+  // --------
+
+  // Admin Manual Payments
+  adminManualPayments: (qs = "") => request(`/admin/manual-payments${qs}`, { method: "GET" }),
+  adminDecideManualPayment: (paymentId, payload) =>
+    request(`/admin/manual-payments/${paymentId}/decision`, { method: "PUT", body: payload }),
+
+  // Tournaments
+  listTournaments: (qs = "") => request(`/tournaments${qs}`),
+  getTournament: (id) => request(`/tournaments/${id}`),
+  leaderboard: (id) => request(`/tournaments/${id}/leaderboard`),
+  matchResults: (id) => request(`/tournaments/${id}/match-results`),
+  room: (id) => request(`/tournaments/${id}/room`),
+
+  registerSoloDuo: (id, payload) => request(`/tournaments/${id}/register`, { method: "POST", body: payload }),
+  registerSquad: (id, payload) => request(`/tournaments/${id}/register-squad`, { method: "POST", body: payload }),
+
+  // Coupons
+  validateCoupon: (payload) => request("/coupons/validate", { method: "POST", body: payload }),
+
+  // ✅ manual proof submit
+  submitManualPaymentProof: (paymentId, payload) =>
+    request(`/payments/${paymentId}/manual-proof`, { method: "POST", body: payload }),
+
+  // ✅ Winners (FIX: add missing functions)
+  /**
+   * Recent winners.
+   * Supports multiple backend route variants.
+   */
+  winnersRecent: (limit = 8) => {
+    const l = Number(limit) || 8;
+    const qs = `?limit=${encodeURIComponent(String(l))}`;
+
+    return requestFirstSuccessful(
+      [
+        `/winners/recent${qs}`,          // preferred
+        `/winners${qs}`,                // fallback: list winners with limit
+        `/winner-profiles/recent${qs}`  // fallback: if API uses WinnerProfile naming
+      ],
+      { method: "GET" }
+    );
+  },
+
+  /**
+   * Featured winners.
+   * Supports multiple backend route variants.
+   */
+  winnersFeatured: () => {
+    return requestFirstSuccessful(
+      [
+        `/winners/featured`,              // preferred
+        `/winners?featured=true`,         // fallback
+        `/winner-profiles?featured=true`  // fallback
+      ],
+      { method: "GET" }
+    );
+  }
 };
 
 export { API_BASE };

@@ -65,6 +65,13 @@ export default function AdminSidebar() {
       badge: "8"
     },
     {
+      title: "Payments Verification",
+      href: "/admin/manual-payments",
+      icon: <FiEye className="w-5 h-5" />,
+      badge: "3"
+
+    },
+    {
       title: "Analytics",
       href: "/admin/analytics",
       icon: <FiBarChart2 className="w-5 h-5" />,
