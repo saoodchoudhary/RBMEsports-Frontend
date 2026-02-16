@@ -178,7 +178,7 @@ export default function HomePage() {
                   </p>
 
                   {/* Live Stream Card */}
-                  <div className="bg-gray-800/80 backdrop-blur-sm rounded-xl sm:rounded-2xl p-4 sm:p-5 border border-gray-700 shadow-xl mb-6 sm:mb-7 lg:mb-8 max-w-lg">
+                  {/* <div className="bg-gray-800/80 backdrop-blur-sm rounded-xl sm:rounded-2xl p-4 sm:p-5 border border-gray-700 shadow-xl mb-6 sm:mb-7 lg:mb-8 max-w-lg">
                     <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
                       <div className="flex items-center gap-3">
                         <div className="relative">
@@ -198,7 +198,7 @@ export default function HomePage() {
                         </div>
                       </div>
                       <a
-                        href="https://youtube.com/@rbmesports"
+                        href="https://www.youtube.com/@rbm.esports"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="sm:ml-auto w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white px-4 sm:px-5 py-2 sm:py-2.5 rounded-lg font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all hover:scale-105"
@@ -209,13 +209,13 @@ export default function HomePage() {
                     </div>
                     <div className="flex items-center gap-3 mt-3 pt-3 border-t border-gray-700">
                       <span className="flex items-center gap-1 text-xs text-gray-400">
-                        <FiEye className="w-3 h-3" /> 3.2K watching
+                        <FiEye className="w-3 h-3" /> 33+ watching
                       </span>
                       <span className="flex items-center gap-1 text-xs text-gray-400">
                         <GiMicrophone className="w-3 h-3" /> Hindi/English
                       </span>
                     </div>
-                  </div>
+                  </div> */}
 
                   {/* Stats Grid */}
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 mb-6 sm:mb-7 lg:mb-8">
@@ -302,7 +302,7 @@ export default function HomePage() {
                           <FaYoutube className="w-4 h-4 text-red-600" />
                           <div>
                             <div className="text-white text-xs font-bold">LIVE NOW</div>
-                            <p className="text-[10px] text-gray-400">2.5K watching</p>
+                            <p className="text-[10px] text-gray-400">25+ watching</p>
                           </div>
                         </div>
                       </div>
@@ -324,18 +324,18 @@ export default function HomePage() {
                   </div>
                   <div>
                     <div className="flex items-center gap-2 mb-0.5">
-                      <h3 className="text-white font-bold text-sm sm:text-base">RBM ESPORTS OFFICIAL STREAM</h3>
+                      <h3 className="text-white font-bold text-sm sm:text-base">RBM ESPORTS</h3>
                       <span className="bg-red-600 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold animate-pulse">
                         LIVE
                       </span>
                     </div>
                     <p className="text-xs sm:text-sm text-gray-400">
-                      🎮 Weekend Championship Finals • Prize Pool ₹2,50,000 • 16 Teams
+                      🎮 Weekend Championship Finals • Prize Pool ₹5,000 • 64 Teams
                     </p>
                   </div>
                 </div>
                 <a
-                  href="https://youtube.com/@rbmesports"
+                  href="https://www.youtube.com/@rbm.esports"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-full lg:w-auto bg-red-600 hover:bg-red-700 text-white px-5 sm:px-6 py-2.5 sm:py-3 rounded-lg font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all hover:scale-105"
@@ -547,30 +547,33 @@ export default function HomePage() {
                   Every tournament is streamed live on our official YouTube channel. 
                   Watch pro players, learn strategies, and catch all the action.
                 </p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-5 max-w-lg mx-auto lg:mx-0">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3 text-center">
+                  <p className="text-sm text-blue-700 font-medium">Timing Updated Soon!</p>
+                </div>
+                {/* <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-5 max-w-lg mx-auto lg:mx-0">
                   <div className="bg-gray-50 rounded-lg p-2.5 text-center border border-gray-100">
                     <div className="text-[10px] text-gray-500">Today</div>
-                    <div className="text-xs font-bold text-gray-900">6:00 PM</div>
+                    <div className="text-xs font-bold text-gray-900">3:00-5:00 PM</div>
                     <div className="text-[10px] text-blue-600 font-medium">Weekend War</div>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-2.5 text-center border border-gray-100">
                     <div className="text-[10px] text-gray-500">Tomorrow</div>
-                    <div className="text-xs font-bold text-gray-900">6:00 PM</div>
+                    <div className="text-xs font-bold text-gray-900">3:00-5:00 PM</div>
                     <div className="text-[10px] text-blue-600 font-medium">Pro Scrims</div>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-2.5 text-center border border-gray-100">
                     <div className="text-[10px] text-gray-500">Sat</div>
-                    <div className="text-xs font-bold text-gray-900">4:00 PM</div>
+                    <div className="text-xs font-bold text-gray-900">3:00-5:00 PM</div>
                     <div className="text-[10px] text-blue-600 font-medium">Finals</div>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-2.5 text-center border border-gray-100">
                     <div className="text-[10px] text-gray-500">Sun</div>
-                    <div className="text-xs font-bold text-gray-900">4:00 PM</div>
+                    <div className="text-xs font-bold text-gray-900">3:00-5:00 PM</div>
                     <div className="text-[10px] text-blue-600 font-medium">Grand Finals</div>
                   </div>
-                </div>
+                </div> */}
                 <a
-                  href="https://youtube.com/@rbmesports"
+                  href="https://www.youtube.com/@rbm.esports"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white px-5 sm:px-6 py-2.5 sm:py-3 rounded-lg font-bold text-xs sm:text-sm transition-all hover:scale-105 shadow-lg shadow-red-600/30"
@@ -589,11 +592,11 @@ export default function HomePage() {
                         <FaYoutube className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
                       </div>
                       <h3 className="text-base sm:text-lg font-bold text-gray-900">@rbmesports</h3>
-                      <p className="text-xs text-gray-600 mt-0.5">50K+ Subscribers</p>
+                      <p className="text-xs text-gray-600 mt-0.5">50+ Subscribers</p>
                       <div className="flex items-center justify-center gap-3 mt-2">
-                        <span className="flex items-center gap-1 text-[10px] text-gray-500">
+                        {/* <span className="flex items-center gap-1 text-[10px] text-gray-500">
                           <FiEye className="w-3 h-3" /> 2.5M+ Views
-                        </span>
+                        </span> */}
                         <span className="flex items-center gap-1 text-[10px] text-gray-500">
                           <GiMicrophone className="w-3 h-3" /> Live Daily
                         </span>
@@ -745,7 +748,7 @@ export default function HomePage() {
           </section>
 
           {/* ===== COMMUNITY SECTION ===== */}
-          <section className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl sm:rounded-2xl p-5 sm:p-6 lg:p-8 text-white shadow-xl">
+          {/* <section className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl sm:rounded-2xl p-5 sm:p-6 lg:p-8 text-white shadow-xl">
             <div className="flex flex-col lg:flex-row items-center gap-6 lg:gap-10">
               <div className="flex-1 text-center lg:text-left">
                 <div className="inline-flex items-center gap-2 bg-white/20 px-3 py-1.5 rounded-full mb-4">
@@ -771,7 +774,7 @@ export default function HomePage() {
                     JOIN DISCORD
                   </a>
                   <a
-                    href="https://youtube.com/@rbmesports"
+                    href="https://www.youtube.com/@rbm.esports"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-lg font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all hover:scale-105"
@@ -802,7 +805,7 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
-          </section>
+          </section> */}
 
           {/* ===== FINAL CTA ===== */}
           <section className="relative overflow-hidden bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl sm:rounded-2xl shadow-2xl">

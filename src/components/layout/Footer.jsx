@@ -42,7 +42,6 @@ const supportLinks = [
 
   const trustPoints = [
     "Verified tournament results",
-    "Secure payments via Razorpay",
     "Wallet withdrawals with admin approval",
     "Fair play & anti-abuse rules"
   ];
