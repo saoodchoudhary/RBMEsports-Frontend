@@ -297,7 +297,7 @@ export default function RegisterClient() {
         <div className="mt-8 sm:mt-10 text-center">
           <div className="inline-flex items-center gap-2 text-xs text-slate-500 bg-white/80 px-3 sm:px-4 py-2 rounded-full border border-slate-200">
             <FiShield className="w-4 h-4" />
-            <span className="text-center">We never store card/UPI PIN. Payments are handled securely by Razorpay.</span>
+            <span className="text-center">We never store card/UPI PIN..</span>
           </div>
         </div>
       </div>
