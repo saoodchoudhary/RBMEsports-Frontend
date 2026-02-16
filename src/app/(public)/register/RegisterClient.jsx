@@ -96,7 +96,7 @@ export default function RegisterClient() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-200px)] flex items-center justify-center p-4">
+    <div className="min-h-[calc(100vh-200px)] flex items-center justify-center ">
       <div className="w-full max-w-4xl">
         <div className="relative">
           <div className="absolute -inset-6 bg-gradient-to-r from-blue-500 to-purple-500 rounded-[2.5rem] blur-2xl opacity-10" />
