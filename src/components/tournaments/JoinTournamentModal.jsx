@@ -395,7 +395,7 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
 
       // ✅ Free / ₹0 => close
       onClose?.();
-      router.refresh?.();
+      router.refresh();
     } catch (error) {
       dispatch(showToast({ type: "error", title: "Failed", message: error?.message || "Registration failed" }));
     } finally {
