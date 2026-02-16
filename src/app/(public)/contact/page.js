@@ -1,115 +1,172 @@
 import LegalPage from "@/components/legal/LegalPage";
-import { FiMail, FiClock, FiMapPin, FiHelpCircle, FiCheckCircle } from "react-icons/fi";
-import { GiTrophy } from "react-icons/gi";
+import {
+  FiMail,
+  FiClock,
+  FiMapPin,
+  FiHelpCircle,
+  FiCheckCircle,
+  FiSmartphone
+} from "react-icons/fi";
 
 export const metadata = {
   title: "Contact Us | RBM ESports",
-  description: "Contact RBM ESports support (rbmesports.vercel.app)."
+  description: "Contact RBM ESports support."
 };
 
 export default function ContactPage() {
   return (
     <LegalPage
       title="Contact Us"
-      subtitle="For support related to tournaments, payments, wallet, withdrawals or account access."
+      subtitle="Support for tournaments, payments, UPI verification, withdrawals, and account help."
       lastUpdated="2026-02-10"
     >
       <div className="space-y-6">
-        
-        {/* Support Cards Grid */}
+
+        {/* Support Cards */}
         <div className="grid sm:grid-cols-2 gap-4">
-          {/* Email Support */}
-          <div className="bg-gradient-to-br from-white to-blue-50/30 border border-gray-200 rounded-lg p-5 hover:shadow-md transition-all">
-            <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center mb-4">
+
+          {/* Email */}
+          <div className="bg-gradient-to-br from-white to-blue-50 border border-gray-200 rounded-lg p-5">
+            <div className="h-12 w-12 rounded-lg bg-blue-600 flex items-center justify-center mb-4">
               <FiMail className="w-6 h-6 text-white" />
             </div>
-            <h3 className="font-bold text-gray-900 mb-2">Support Email</h3>
-            <p className="text-sm text-gray-600 mb-3">For all queries & support</p>
-            <a 
-              href="mailto:rbmesports04@gmail.com" 
-              className="text-blue-600 font-semibold text-sm hover:underline inline-flex items-center gap-1"
+
+            <h3 className="font-bold text-gray-900 mb-2">
+              Support Email
+            </h3>
+
+            <p className="text-sm text-gray-600 mb-2">
+              Tournament & account support
+            </p>
+
+            <a
+              href="mailto:rbmesports04@gmail.com"
+              className="text-blue-600 font-semibold text-sm hover:underline"
             >
               rbmesports04@gmail.com
-              <span className="text-xs">→</span>
             </a>
           </div>
 
-          {/* Support Timing */}
-          <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 rounded-lg p-5 hover:shadow-md transition-all">
-            <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-gray-700 to-gray-800 flex items-center justify-center mb-4">
+          {/* Timing */}
+          <div className="bg-white border border-gray-200 rounded-lg p-5">
+            <div className="h-12 w-12 rounded-lg bg-gray-800 flex items-center justify-center mb-4">
               <FiClock className="w-6 h-6 text-white" />
             </div>
-            <h3 className="font-bold text-gray-900 mb-2">Support Timing</h3>
-            <p className="text-sm text-gray-600 mb-1">10:00 AM – 7:00 PM (IST)</p>
-            <p className="text-xs text-gray-500">Monday – Saturday</p>
-            <p className="text-xs text-gray-500 mt-2">Sunday: Closed</p>
+
+            <h3 className="font-bold mb-1">
+              Support Timing
+            </h3>
+
+            <p className="text-sm text-gray-600">
+              10:00 AM – 7:00 PM (IST)
+            </p>
+
+            <p className="text-xs text-gray-500">
+              Monday – Saturday
+            </p>
           </div>
 
           {/* Location */}
-          <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 rounded-lg p-5 hover:shadow-md transition-all">
-            <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-gray-700 to-gray-800 flex items-center justify-center mb-4">
+          <div className="bg-white border border-gray-200 rounded-lg p-5">
+            <div className="h-12 w-12 rounded-lg bg-gray-800 flex items-center justify-center mb-4">
               <FiMapPin className="w-6 h-6 text-white" />
             </div>
-            <h3 className="font-bold text-gray-900 mb-2">Location</h3>
-            <p className="text-sm text-gray-600">India</p>
-            <p className="text-xs text-gray-500 mt-2">Remote operations • Pan India</p>
+
+            <h3 className="font-bold mb-1">
+              Location
+            </h3>
+
+            <p className="text-sm text-gray-600">
+              India
+            </p>
+
+            <p className="text-xs text-gray-500">
+              Remote operations • Pan India
+            </p>
           </div>
 
-          {/* Quick Response */}
-          <div className="bg-gradient-to-br from-white to-blue-50/30 border border-gray-200 rounded-lg p-5 hover:shadow-md transition-all">
-            <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center mb-4">
+          {/* Response */}
+          <div className="bg-gradient-to-br from-white to-blue-50 border border-gray-200 rounded-lg p-5">
+            <div className="h-12 w-12 rounded-lg bg-blue-600 flex items-center justify-center mb-4">
               <FiHelpCircle className="w-6 h-6 text-white" />
             </div>
-            <h3 className="font-bold text-gray-900 mb-2">Quick Response</h3>
-            <p className="text-sm text-gray-600 mb-1">Avg. reply time</p>
-            <p className="text-xs font-semibold text-green-600">Within 4-6 hours</p>
+
+            <h3 className="font-bold mb-1">
+              Response Time
+            </h3>
+
+            <p className="text-sm text-green-600 font-semibold">
+              Within 4 – 6 hours
+            </p>
           </div>
+
         </div>
 
-        {/* For Faster Help Section */}
-        <div className="bg-gradient-to-br from-blue-50 to-white border border-blue-100 rounded-lg p-5">
-          <div className="flex items-start gap-3 mb-4">
-            <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
-              <span className="text-white font-bold text-sm">!</span>
-            </div>
-            <h2 className="text-lg font-bold text-gray-900">
-              For faster help, include:
-            </h2>
-          </div>
-          
+        {/* Faster Help */}
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-5">
+
+          <h2 className="font-bold mb-4">
+            For faster help, include:
+          </h2>
+
           <div className="grid sm:grid-cols-2 gap-3">
-            <div className="flex items-center gap-2 bg-white p-3 rounded-lg border border-gray-200">
-              <FiCheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
-              <span className="text-sm text-gray-700">Registered email</span>
+
+            <div className="flex items-center gap-2 bg-white p-3 rounded border">
+              <FiCheckCircle className="text-green-600" />
+              <span className="text-sm">Registered email</span>
             </div>
-            <div className="flex items-center gap-2 bg-white p-3 rounded-lg border border-gray-200">
-              <FiCheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
-              <span className="text-sm text-gray-700">Tournament name/date</span>
+
+            <div className="flex items-center gap-2 bg-white p-3 rounded border">
+              <FiCheckCircle className="text-green-600" />
+              <span className="text-sm">
+                Tournament name / date
+              </span>
             </div>
-            <div className="flex items-center gap-2 bg-white p-3 rounded-lg border border-gray-200">
-              <FiCheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
-              <span className="text-sm text-gray-700">Razorpay Payment ID / Order ID</span>
+
+            <div className="flex items-center gap-2 bg-white p-3 rounded border">
+              <FiSmartphone className="text-blue-600" />
+              <span className="text-sm">
+                UPI Transaction ID (UTR)
+              </span>
             </div>
-            <div className="flex items-center gap-2 bg-white p-3 rounded-lg border border-gray-200">
-              <FiCheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
-              <span className="text-sm text-gray-700">Wallet withdrawal details</span>
+
+            <div className="flex items-center gap-2 bg-white p-3 rounded border">
+              <FiCheckCircle className="text-green-600" />
+              <span className="text-sm">
+                Payment screenshot proof
+              </span>
             </div>
+
+            <div className="flex items-center gap-2 bg-white p-3 rounded border sm:col-span-2">
+              <FiCheckCircle className="text-green-600" />
+              <span className="text-sm">
+                Withdrawal / wallet request details
+              </span>
+            </div>
+
           </div>
-          
-          <p className="text-xs text-gray-500 mt-4 bg-white/50 p-3 rounded-lg border border-blue-100">
-            ⚡ Including these details helps us resolve your issue 3x faster!
+
+          <p className="text-xs text-gray-500 mt-4">
+            Providing these details helps resolve issues faster.
           </p>
+
         </div>
 
-        {/* Emergency Contact Note */}
+        {/* Emergency */}
         <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
-          <p className="text-sm text-gray-600">
-            <span className="font-bold text-gray-900">Urgent issues?</span> Please email us directly at{' '}
-            <a href="mailto:rbmesports04@gmail.com" className="text-blue-600 font-semibold hover:underline">
+
+          <p className="text-sm text-gray-700">
+            Urgent issues? Email directly at{" "}
+            <a
+              href="mailto:rbmesports04@gmail.com"
+              className="text-blue-600 font-semibold"
+            >
               rbmesports04@gmail.com
             </a>
           </p>
+
         </div>
+
       </div>
     </LegalPage>
   );
