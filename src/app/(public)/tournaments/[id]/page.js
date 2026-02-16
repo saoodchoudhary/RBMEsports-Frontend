@@ -544,14 +544,14 @@ export default async function TournamentDetailPage({ params }) {
                       </span>
                     </div>
                   </li>
-                  <li className="flex items-start gap-2">
+                  {/* <li className="flex items-start gap-2">
                     <div className="h-5 w-5 rounded-full bg-green-100 flex items-center justify-center mt-0.5 flex-shrink-0">
                       {mapIcons[t?.map] || <GiBurningForest className="w-3 h-3 text-green-600" />}
                     </div>
                     <div>
                       <span className="font-medium text-gray-900">Map:</span> {t?.map || "—"}
                     </div>
-                  </li>
+                  </li> */}
                   <li className="flex items-start gap-2">
                     <div className="h-5 w-5 rounded-full bg-blue-100 flex items-center justify-center mt-0.5 flex-shrink-0">
                       <GiEyeTarget className="w-3 h-3 text-blue-600" />
