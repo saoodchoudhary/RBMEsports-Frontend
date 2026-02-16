@@ -18,6 +18,7 @@ import {
   FiUsers,
   FiXCircle,
   FiArrowRight,
+  FiArrowLeft,
   FiUser
 } from "react-icons/fi";
 import { GiTeamIdea } from "react-icons/gi";
@@ -453,6 +454,24 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
     return "border-slate-200 bg-slate-50 text-slate-900";
   }
 
+  // ✅ Get current tab index
+  const currentTabIndex = tabs.findIndex((t) => t.key === activeTab);
+  const isFirstTab = currentTabIndex === 0;
+  const isLastTab = currentTabIndex === tabs.length - 1;
+
+  // ✅ Navigation functions
+  function goToPreviousTab() {
+    if (!isFirstTab) {
+      setActiveTab(tabs[currentTabIndex - 1].key);
+    }
+  }
+
+  function goToNextTab() {
+    if (!isLastTab) {
+      setActiveTab(tabs[currentTabIndex + 1].key);
+    }
+  }
+
   return (
     <>
       <Modal open={open} onClose={onClose} title="Join Tournament" maxWidth="max-w-4xl">
@@ -489,14 +508,14 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
 
                 {!isRegistrationOpen && !regRegistered && (
                   <div className="mt-4 p-3 rounded-xl border border-red-200 bg-red-50 text-red-800 text-sm flex gap-2">
-                    <FiXCircle className="w-5 h-5 mt-0.5" />
+                    <FiXCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
                     <div className="font-semibold">Registration is currently closed for this tournament.</div>
                   </div>
                 )}
 
                 {formErrors.profile && (
                   <div className="mt-4 p-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 text-sm flex gap-2">
-                    <FiInfo className="w-5 h-5 mt-0.5" />
+                    <FiInfo className="w-5 h-5 mt-0.5 flex-shrink-0" />
                     <div>
                       <div className="font-bold">Profile incomplete</div>
                       <div className="text-amber-800">{formErrors.profile}</div>
@@ -507,14 +526,14 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
                 {/* ✅ Payment pending banner */}
                 {paymentBanner && (
                   <div className={`mt-4 p-3 rounded-xl border text-sm flex items-start gap-2 ${bannerClass(paymentBanner.tone)}`}>
-                    <FiInfo className="w-5 h-5 mt-0.5" />
+                    <FiInfo className="w-5 h-5 mt-0.5 flex-shrink-0" />
                     <div className="flex-1">
                       <div className="font-black">{paymentBanner.title}</div>
                       <div className="opacity-90">{paymentBanner.msg}</div>
 
                       {paymentBanner.cta && regPaymentId && (
                         <div className="mt-2">
-                          <Button type="button" onClick={() => openManual(regPaymentId)}>
+                          <Button type="button" onClick={() => openManual(regPaymentId)} size="sm">
                             {paymentBanner.cta}
                           </Button>
                         </div>
@@ -550,7 +569,7 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
           </div>
 
           {/* Tabs */}
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 overflow-x-auto pb-2">
             {tabs.map((t) => (
               <TabPill
                 key={t.key}
@@ -596,7 +615,7 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
                   </div>
 
                   <div className="mt-4 p-3 rounded-xl border border-blue-200 bg-blue-50 text-blue-900 text-sm flex gap-2">
-                    <FiShield className="w-5 h-5 mt-0.5" />
+                    <FiShield className="w-5 h-5 mt-0.5 flex-shrink-0" />
                     <div>
                       <div className="font-bold">How it works</div>
                       <div className="text-blue-800">
@@ -786,7 +805,7 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
 
                       {couponInfo ? (
                         <div className="mt-3 p-3 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-900 text-sm flex gap-2">
-                          <FiCheckCircle className="w-5 h-5 mt-0.5" />
+                          <FiCheckCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
                           <div>
                             <div className="font-bold">Coupon applied</div>
                             <div className="text-emerald-800">
@@ -823,7 +842,7 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
                   </div>
 
                   <div className="mt-4 p-3 rounded-xl border border-blue-200 bg-blue-50 text-blue-900 text-sm flex gap-2">
-                    <FiInfo className="w-5 h-5 mt-0.5" />
+                    <FiInfo className="w-5 h-5 mt-0.5 flex-shrink-0" />
                     <div>
                       <div className="font-bold">Manual UPI</div>
                       <div className="text-blue-800">Proceed will open UPI + UTR submit popup.</div>
@@ -834,7 +853,7 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
             )}
           </div>
 
-          {/* Footer actions */}
+          {/* ✅ Footer Navigation - Back/Next/Proceed Buttons */}
           <div className="sticky bottom-0 bg-white pt-4 border-t border-slate-200">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="text-sm text-slate-600 flex items-center gap-2">
@@ -845,23 +864,41 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
               </div>
 
               <div className="flex gap-2">
-                <Button type="button" variant="outline" onClick={onClose}>
-                  Close
-                </Button>
+                {/* ✅ Back Button */}
+                {!isFirstTab && (
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={goToPreviousTab}
+                    className="flex items-center gap-1"
+                  >
+                    <FiArrowLeft className="w-4 h-4" />
+                    Back
+                  </Button>
+                )}
 
-                {activeTab !== "payment" ? (
+                {/* ✅ Close Button (only on first tab OR when on payment tab) */}
+                {(isFirstTab || isLastTab) && (
+                  <Button type="button" variant="outline" onClick={onClose}>
+                    Close
+                  </Button>
+                )}
+
+                {/* ✅ Next Button (not on last tab) */}
+                {!isLastTab && (
                   <Button
                     type="button"
-                    onClick={() => {
-                      const idx = tabs.findIndex((x) => x.key === activeTab);
-                      const next = tabs[idx + 1]?.key;
-                      if (next) setActiveTab(next);
-                    }}
-                    disabled={!canContinueToPayment()}
+                    onClick={goToNextTab}
+                    // disabled={!canContinueToPayment()}
+                    className="flex items-center gap-1"
                   >
-                    Continue <FiArrowRight className="w-4 h-4 ml-1" />
+                    Next
+                    <FiArrowRight className="w-4 h-4" />
                   </Button>
-                ) : (
+                )}
+
+                {/* ✅ Proceed Button (only on payment tab) */}
+                {isLastTab && (
                   <Button
                     type="button"
                     onClick={handleProceedOrPayNow}
