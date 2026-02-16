@@ -18,7 +18,9 @@ import {
   FiUsers,
   FiXCircle
 } from "react-icons/fi";
-import { GiTeamIdea } from "react-icons/gi";
+import {
+  GiTeamIdea
+} from "react-icons/gi";
 import { BsFillPeopleFill } from "react-icons/bs";
 
 import { showToast } from "@/store/uiSlice";
@@ -31,13 +33,6 @@ function emptyMember() {
 function safeNum(n, fallback = 0) {
   const v = Number(n);
   return Number.isFinite(v) ? v : fallback;
-}
-
-function normalizeId(x) {
-  if (!x) return null;
-  if (typeof x === "string") return x;
-  if (typeof x === "object" && x._id) return String(x._id);
-  return null;
 }
 
 export default function JoinTournamentModal({ open, onClose, tournament }) {
@@ -63,12 +58,13 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
   // Members for squad
   const [members, setMembers] = useState([]);
 
-  // ✅ Manual payment popup state
+  // ✅ Manual payment modal state
   const [manualOpen, setManualOpen] = useState(false);
-  const [manualCtx, setManualCtx] = useState(null); // { paymentId, amount, tournamentTitle }
+  const [manualPaymentId, setManualPaymentId] = useState(null);
 
-  // ✅ Keep a fresh tournament snapshot (to detect already registered + paymentId)
-  const [freshTournament, setFreshTournament] = useState(null);
+  // ✅ Check existing registration on open
+  const [checkingRegistration, setCheckingRegistration] = useState(false);
+  const [existingRegistration, setExistingRegistration] = useState(null);
 
   const baseAmount = tournament?.isFree ? 0 : safeNum(tournament?.serviceFee, 0);
   const isRegistrationOpen = Boolean(tournament?.isRegistrationOpen) && !Boolean(tournament?.isFull);
@@ -79,20 +75,76 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
     }
   }, [open, user, router, tournament]);
 
-  // ✅ Fetch fresh tournament details on open
+  // ✅ NEW: Check existing registration when modal opens + pre-fill teammate data
   useEffect(() => {
-    async function fetchFresh() {
+    async function checkExistingRegistration() {
+      if (!open || !tournament?._id || !user?.id) return;
+
+      setCheckingRegistration(true);
       try {
-        if (!open || !tournament?._id) return;
-        const res = await api.getTournament(tournament._id);
-        setFreshTournament(res?.data || null);
-      } catch {
-        // ignore (modal can still work)
-        setFreshTournament(null);
+        const res = await api.getMyTournamentRegistration(tournament._id);
+        
+        if (res.success && res.data?.registered) {
+          setExistingRegistration(res.data);
+          
+          // ✅ If payment is done, show message and close
+          if (res.data.paymentStatus === "paid" || res.data.paymentStatus === "success") {
+            dispatch(showToast({ 
+              type: "info", 
+              title: "Already Registered", 
+              message: "You are already registered for this tournament" 
+            }));
+            onClose?.();
+            return;
+          }
+
+          // ✅ PRE-FILL TEAMMATE DATA from existing registration
+          if (res.data.teammates) {
+            if (tournament.tournamentType === "duo" && res.data.teammates.partnerInfo) {
+              setPartnerBgmiId(res.data.teammates.partnerInfo.bgmiId || "");
+              setPartnerInGameName(res.data.teammates.partnerInfo.inGameName || "");
+            } else if (tournament.tournamentType === "squad") {
+              if (res.data.teammates.teamName) {
+                setTeamName(res.data.teammates.teamName);
+              }
+              if (res.data.teammates.members && Array.isArray(res.data.teammates.members)) {
+                setMembers(res.data.teammates.members.map(m => ({
+                  bgmiId: m.bgmiId || "",
+                  inGameName: m.inGameName || ""
+                })));
+              }
+            }
+          }
+
+          // ✅ If payment is pending, open payment modal directly
+          if (res.data.paymentId && (res.data.paymentStatus === "pending" || res.data.paymentStatus === "on_hold")) {
+            dispatch(showToast({ 
+              type: "info", 
+              title: "Payment Pending", 
+              message: "Please complete your payment to confirm registration" 
+            }));
+            
+            // Close main modal and open payment modal
+            setTimeout(() => {
+              openManual(res.data.paymentId);
+              onClose?.();
+            }, 100);
+            return;
+          }
+        } else {
+          setExistingRegistration(null);
+        }
+      } catch (error) {
+        console.error("Error checking registration:", error);
+        setExistingRegistration(null);
+      } finally {
+        setCheckingRegistration(false);
       }
     }
-    fetchFresh();
-  }, [open, tournament?._id]);
+
+    checkExistingRegistration();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, tournament?._id, user?.id]);
 
   useEffect(() => {
     if (!open) resetForm();
@@ -112,9 +164,12 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
   };
 
   useEffect(() => {
-    if (tournament && user) initializeMembers();
+    if (tournament && user && !existingRegistration) {
+      // Only initialize empty members if no existing registration
+      initializeMembers();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tournament, user]);
+  }, [tournament, user, existingRegistration]);
 
   const resetForm = () => {
     setActiveTab("details");
@@ -125,8 +180,8 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
     setPartnerInGameName("");
     setFormErrors({});
     setManualOpen(false);
-    setManualCtx(null);
-    setFreshTournament(null);
+    setManualPaymentId(null);
+    setExistingRegistration(null);
     if (tournament && user) initializeMembers();
   };
 
@@ -171,12 +226,7 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
     (tournament?.tournamentType === "squad" || tournament?.tournamentType === "duo") && {
       key: "teammates",
       label: tournament?.tournamentType === "duo" ? "Partner" : "Teammates",
-      icon:
-        tournament?.tournamentType === "duo" ? (
-          <BsFillPeopleFill className="w-4 h-4" />
-        ) : (
-          <GiTeamIdea className="w-4 h-4" />
-        )
+      icon: tournament?.tournamentType === "duo" ? <BsFillPeopleFill className="w-4 h-4" /> : <GiTeamIdea className="w-4 h-4" />
     },
     { key: "payment", label: "Payment", icon: <FiCreditCard className="w-4 h-4" /> }
   ].filter(Boolean);
@@ -203,28 +253,8 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
     return errors;
   };
 
-  // ✅ Find existing paymentId if already registered
-  function findExistingPaymentId() {
-    const t = freshTournament;
-    if (!t || !user?.id) return null;
-
-    if (t.tournamentType === "squad") {
-      // tournament.teams might exist in some backend versions, but in your backend getTournament populates winners/participants only.
-      // So squad paymentId often comes from TournamentTeam. If not present in getTournament, we can't detect here.
-      // We'll rely on backend register-squad response paymentId OR add a backend endpoint later if needed.
-      return null;
-    }
-
-    const participant = (t.participants || []).find((p) => String(p.userId?._id || p.userId) === String(user.id));
-    return normalizeId(participant?.paymentId);
-  }
-
   function openManual(paymentId) {
-    setManualCtx({
-      paymentId: paymentId || null,
-      amount: payable,
-      tournamentTitle: tournament?.title || ""
-    });
+    setManualPaymentId(paymentId);
     setManualOpen(true);
   }
 
@@ -241,30 +271,12 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
 
       if (res.success) {
         setCouponInfo(res.data);
-        dispatch(
-          showToast({
-            type: "success",
-            title: "Coupon Applied",
-            message: `₹${safeNum(res.data.discountAmount, 0)} discount applied`
-          })
-        );
+        dispatch(showToast({ type: "success", title: "Coupon Applied", message: `₹${safeNum(res.data.discountAmount, 0)} discount applied` }));
       } else {
-        dispatch(
-          showToast({
-            type: "error",
-            title: "Coupon Error",
-            message: res?.message || "Failed to apply coupon"
-          })
-        );
+        dispatch(showToast({ type: "error", title: "Coupon Error", message: res?.message || "Failed to apply coupon" }));
       }
     } catch (error) {
-      dispatch(
-        showToast({
-          type: "error",
-          title: "Invalid Coupon",
-          message: error?.message || "Please enter a valid coupon code"
-        })
-      );
+      dispatch(showToast({ type: "error", title: "Invalid Coupon", message: error?.message || "Please enter a valid coupon code" }));
       setCouponInfo(null);
     } finally {
       setVerifyingCoupon(false);
@@ -275,17 +287,6 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
     if (!isRegistrationOpen) {
       dispatch(showToast({ type: "error", title: "Registration Closed", message: "Registration is not open for this tournament" }));
       return;
-    }
-
-    // ✅ If payable > 0 and user already registered, DON'T re-register.
-    if (payable > 0) {
-      const existingPaymentId = findExistingPaymentId();
-      if (existingPaymentId) {
-        onClose?.();
-        dispatch(showToast({ type: "info", title: "Already registered", message: "Payment pending. Please pay and submit UTR." }));
-        openManual(existingPaymentId);
-        return;
-      }
     }
 
     const errors = validateForm();
@@ -321,67 +322,43 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
         res = await api.registerSoloDuo(tournament._id, payloadBase);
       }
 
-      if (!res.success) {
+      if (!res?.success) {
         dispatch(showToast({ type: "error", title: "Registration Failed", message: res?.message || "Please try again" }));
         return;
       }
 
+      // ✅ Close main modal first
       onClose?.();
 
-      if (payable === 0) {
+      // ✅ Free registration - NO PAYMENT MODAL
+      if (payable === 0 || res?.payableAmount === 0) {
         router.refresh();
         dispatch(showToast({ type: "success", title: "Registered Successfully", message: "You have been registered for the tournament" }));
         return;
       }
 
-      // ✅ Use returned paymentId (backend payments/create-order expects paymentId)
-      const paymentId = res?.data?.paymentId || res?.paymentId;
-
+      // ✅ Open manual payment popup immediately for paid tournaments
+      const paymentId = res?.payment?.id || res?.payment?.paymentId || res?.data?.paymentId;
       if (paymentId) {
         dispatch(showToast({ type: "success", title: "Registration Done", message: "Pay via UPI and submit UTR for verification." }));
-        openManual(paymentId);
+        setTimeout(() => openManual(paymentId), 200);
         return;
       }
 
-      // Fallback: re-fetch tournament to find paymentId (solo/duo)
-      try {
-        const fresh = await api.getTournament(tournament._id);
-        setFreshTournament(fresh?.data || null);
-        const pid = (() => {
-          const t = fresh?.data;
-          if (!t) return null;
-          const participant = (t.participants || []).find((p) => String(p.userId?._id || p.userId) === String(user.id));
-          return normalizeId(participant?.paymentId);
-        })();
-
-        if (pid) {
-          dispatch(showToast({ type: "success", title: "Registration Done", message: "Pay via UPI and submit UTR for verification." }));
-          openManual(pid);
-          return;
-        }
-      } catch {
-        // ignore
-      }
-
-      dispatch(showToast({ type: "error", title: "Payment Error", message: "PaymentId not found. Please contact support." }));
+      dispatch(showToast({ type: "error", title: "Payment Error", message: "Payment ID not found. Please contact support." }));
     } catch (error) {
-      // If backend says already registered, recover by opening existing payment modal (solo/duo)
       const msg = String(error?.message || "");
-      if (msg.toLowerCase().includes("already registered")) {
-        try {
-          const fresh = await api.getTournament(tournament._id);
-          setFreshTournament(fresh?.data || null);
-          const pid = (() => {
-            const t = fresh?.data;
-            if (!t) return null;
-            const participant = (t.participants || []).find((p) => String(p.userId?._id || p.userId) === String(user.id));
-            return normalizeId(participant?.paymentId);
-          })();
 
-          if (pid) {
+      if (msg.toLowerCase().includes("already registered") || msg.toLowerCase().includes("already")) {
+        // User already registered - check for pending payment
+        try {
+          const regRes = await api.getMyTournamentRegistration(tournament._id);
+          if (regRes.success && regRes.data?.paymentId) {
             onClose?.();
-            dispatch(showToast({ type: "info", title: "Already registered", message: "Payment pending. Please pay and submit UTR." }));
-            openManual(pid);
+            setTimeout(() => {
+              openManual(regRes.data.paymentId);
+              dispatch(showToast({ type: "info", title: "Already registered", message: "Payment pending. Please submit UTR to complete." }));
+            }, 200);
             return;
           }
         } catch {
@@ -397,47 +374,58 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
 
   if (!tournament || !user) return null;
 
+  // ✅ Show loading while checking registration
+  if (checkingRegistration) {
+    return (
+      <Modal open={open} onClose={onClose} title="Join Tournament" size="lg">
+        <div className="flex items-center justify-center py-20">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      </Modal>
+    );
+  }
+
   return (
     <>
       <Modal open={open} onClose={onClose} title="Join Tournament" size="lg">
-        <div className="space-y-6">
-          {/* Tournament Info */}
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-xl p-4">
-            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+        <div className="space-y-5 sm:space-y-6">
+          {/* Tournament Info Card */}
+          <div className="bg-gradient-to-r from-blue-50 to-blue-50 border border-blue-200 rounded-lg sm:rounded-xl p-4 sm:p-5">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
               <div className="flex-1">
-                <h3 className="font-bold text-slate-800 text-lg">{tournament.title}</h3>
+                <h3 className="font-bold text-gray-900 text-base sm:text-lg">{tournament.title}</h3>
 
                 <div className="flex flex-wrap items-center gap-2 mt-2">
-                  <span className="flex items-center gap-1 text-sm font-medium text-blue-600 bg-blue-100 px-3 py-1 rounded-full">
+                  <span className="inline-flex items-center gap-1 text-xs sm:text-sm font-semibold text-blue-700 bg-blue-100 px-2.5 py-1 rounded-full">
                     {tournament.tournamentType === "solo" ? (
-                      <FiUsers className="w-4 h-4" />
+                      <FiUsers className="w-3.5 h-3.5" />
                     ) : tournament.tournamentType === "duo" ? (
-                      <BsFillPeopleFill className="w-4 h-4" />
+                      <BsFillPeopleFill className="w-3.5 h-3.5" />
                     ) : (
-                      <GiTeamIdea className="w-4 h-4" />
+                      <GiTeamIdea className="w-3.5 h-3.5" />
                     )}
                     {getTournamentTypeText()}
                   </span>
 
-                  <span className="text-sm text-slate-600">
+                  <span className="text-xs sm:text-sm text-gray-600">
                     {tournament.isFree ? "Free Entry" : `Entry Fee: ₹${baseAmount}`}
                   </span>
                 </div>
 
-                <div className="text-sm text-slate-500 mt-2">{getMembersInfoText()}</div>
+                <div className="text-xs sm:text-sm text-gray-500 mt-2">{getMembersInfoText()}</div>
 
                 {!isRegistrationOpen && (
-                  <div className="mt-3 text-sm text-red-600 font-medium">
+                  <div className="mt-3 text-xs sm:text-sm text-red-600 font-semibold">
                     Registration is currently closed for this tournament.
                   </div>
                 )}
               </div>
 
-              <div className="mt-2 md:mt-0">
-                <div className="text-2xl font-bold text-blue-600">
+              <div className="text-right">
+                <div className="text-xl sm:text-2xl font-extrabold text-blue-700">
                   ₹{safeNum(tournament.prizePool, 0).toLocaleString("en-IN")}
                 </div>
-                <div className="text-xs text-slate-600">Prize Pool</div>
+                <div className="text-xs text-gray-600">Prize Pool</div>
               </div>
             </div>
           </div>
@@ -465,7 +453,6 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
 
           {/* Content */}
           <div className="space-y-6">
-            {/* DETAILS */}
             {activeTab === "details" && (
               <>
                 {formErrors.profile && (
@@ -474,7 +461,6 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
                   </div>
                 )}
 
-                {/* Coupon */}
                 {showCoupon && (
                   <div className="border border-slate-200 rounded-xl p-4">
                     <h4 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
@@ -487,7 +473,7 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
                         <Input
                           value={couponCode}
                           onChange={(e) => setCouponCode(e.target.value)}
-                          placeholder="Enter coupon code (RBM50)"
+                          placeholder="Enter coupon code"
                           icon={<FiTag className="w-4 h-4" />}
                         />
                       </div>
@@ -506,14 +492,12 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
 
                     {couponInfo && (
                       <div className="mt-3 p-3 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-center justify-between gap-3">
                           <div className="flex items-center gap-2 text-green-700">
                             <FiCheckCircle className="w-5 h-5" />
                             <div>
                               <div className="font-medium">Coupon Applied!</div>
-                              <div className="text-xs text-green-600">
-                                Discount: ₹{safeNum(couponInfo.discountAmount, 0)}
-                              </div>
+                              <div className="text-xs text-green-600">Discount: ₹{safeNum(couponInfo.discountAmount, 0)}</div>
                             </div>
                           </div>
 
@@ -530,147 +514,149 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
                 )}
               </>
             )}
-          {/* TEAMMATES */}
+
+            {/* TEAMMATES */}
             {activeTab === "teammates" && (tournament.tournamentType === "duo" || tournament.tournamentType === "squad") && (
               <div className="space-y-6">
-              {/* Captain info */}
-              <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4">
-                <div className="flex items-start gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-gradient-to-r from-green-500 to-emerald-500 flex items-center justify-center">
-                    <FiUsers className="w-5 h-5 text-white" />
-                  </div>
-
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="font-semibold text-slate-800">Your Details (Captain)</h4>
-                        <p className="text-sm text-slate-600 mt-1">
-                          Your information is automatically added as captain.
-                        </p>
-                      </div>
-                      <div className="bg-green-100 text-green-800 text-xs font-medium px-2 py-1 rounded">
-                        AUTO-FILLED
-                      </div>
+                {/* Captain info */}
+                <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="h-10 w-10 rounded-lg bg-gradient-to-r from-green-500 to-emerald-500 flex items-center justify-center">
+                      <FiUsers className="w-5 h-5 text-white" />
                     </div>
 
-                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div className="bg-white p-3 rounded-lg border border-green-100">
-                        <div className="text-xs text-slate-500 mb-1">Your BGMI ID</div>
-                        <div className="font-medium text-slate-800 flex items-center gap-2">
-                          {user.bgmiId || "Not set"}
-                          {user.bgmiId && <FiCheckCircle className="w-4 h-4 text-green-500" />}
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="font-semibold text-slate-800">Your Details (Captain)</h4>
+                          <p className="text-sm text-slate-600 mt-1">
+                            Your information is automatically added as captain.
+                          </p>
+                        </div>
+                        <div className="bg-green-100 text-green-800 text-xs font-medium px-2 py-1 rounded">
+                          AUTO-FILLED
                         </div>
                       </div>
-                      <div className="bg-white p-3 rounded-lg border border-green-100">
-                        <div className="text-xs text-slate-500 mb-1">Your In-Game Name</div>
-                        <div className="font-medium text-slate-800 flex items-center gap-2">
-                          {user.inGameName || "Not set"}
-                          {user.inGameName && <FiCheckCircle className="w-4 h-4 text-green-500" />}
+
+                      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="bg-white p-3 rounded-lg border border-green-100">
+                          <div className="text-xs text-slate-500 mb-1">Your BGMI ID</div>
+                          <div className="font-medium text-slate-800 flex items-center gap-2">
+                            {user.bgmiId || "Not set"}
+                            {user.bgmiId && <FiCheckCircle className="w-4 h-4 text-green-500" />}
+                          </div>
+                        </div>
+                        <div className="bg-white p-3 rounded-lg border border-green-100">
+                          <div className="text-xs text-slate-500 mb-1">Your In-Game Name</div>
+                          <div className="font-medium text-slate-800 flex items-center gap-2">
+                            {user.inGameName || "Not set"}
+                            {user.inGameName && <FiCheckCircle className="w-4 h-4 text-green-500" />}
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Team name */}
-              {tournament.tournamentType === "squad" && (
-                <Input
-                  label="Team Name (Optional)"
-                  value={teamName}
-                  onChange={(e) => setTeamName(e.target.value)}
-                  placeholder="Enter your team name (e.g., RBM Warriors)"
-                />
-              )}
+                {/* Team name */}
+                {tournament.tournamentType === "squad" && (
+                  <Input
+                    label="Team Name (Optional)"
+                    value={teamName}
+                    onChange={(e) => setTeamName(e.target.value)}
+                    placeholder="Enter your team name (e.g., RBM Warriors)"
+                  />
+                )}
 
-              {/* Duo */}
-              {tournament.tournamentType === "duo" && (
-                <div className="border border-slate-200 rounded-xl p-4 hover:border-amber-300 transition-colors">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="h-8 w-8 rounded-lg bg-gradient-to-r from-amber-100 to-orange-100 flex items-center justify-center">
-                      <span className="font-bold text-amber-700">P</span>
-                    </div>
-                    <div>
-                      <span className="font-medium text-slate-800">Partner</span>
-                      <div className="text-xs text-slate-500">Your duo partner</div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <Input
-                      label="Partner BGMI ID"
-                      value={partnerBgmiId}
-                      onChange={(e) => setPartnerBgmiId(e.target.value)}
-                      placeholder="Enter partner's BGMI ID"
-                      error={formErrors.partnerBgmiId}
-                      required
-                    />
-                    <Input
-                      label="Partner In-Game Name"
-                      value={partnerInGameName}
-                      onChange={(e) => setPartnerInGameName(e.target.value)}
-                      placeholder="Enter partner's in-game name"
-                      error={formErrors.partnerInGameName}
-                      required
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Squad */}
-              {tournament.tournamentType === "squad" &&
-                members.map((member, index) => (
-                  <div key={index} className="border border-slate-200 rounded-xl p-4 hover:border-blue-300 transition-colors">
+                {/* Duo */}
+                {tournament.tournamentType === "duo" && (
+                  <div className="border border-slate-200 rounded-xl p-4 hover:border-amber-300 transition-colors">
                     <div className="flex items-center gap-2 mb-3">
-                      <div className="h-8 w-8 rounded-lg bg-gradient-to-r from-blue-100 to-cyan-100 flex items-center justify-center">
-                        <span className="font-bold text-blue-600">{index + 1}</span>
+                      <div className="h-8 w-8 rounded-lg bg-gradient-to-r from-amber-100 to-orange-100 flex items-center justify-center">
+                        <span className="font-bold text-amber-700">P</span>
                       </div>
                       <div>
-                        <span className="font-medium text-slate-800">Teammate {index + 1}</span>
-                        <div className="text-xs text-slate-500">Required</div>
+                        <span className="font-medium text-slate-800">Partner</span>
+                        <div className="text-xs text-slate-500">Your duo partner</div>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <Input
-                        label="BGMI ID"
-                        value={member.bgmiId}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setMembers((prev) => prev.map((x, i) => (i === index ? { ...x, bgmiId: v } : x)));
-                        }}
-                        placeholder="Enter teammate's BGMI ID"
-                        error={formErrors[`member${index}BgmiId`]}
+                        label="Partner BGMI ID"
+                        value={partnerBgmiId}
+                        onChange={(e) => setPartnerBgmiId(e.target.value)}
+                        placeholder="Enter partner's BGMI ID"
+                        error={formErrors.partnerBgmiId}
                         required
                       />
                       <Input
-                        label="In-Game Name"
-                        value={member.inGameName}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setMembers((prev) => prev.map((x, i) => (i === index ? { ...x, inGameName: v } : x)));
-                        }}
-                        placeholder="Enter teammate's in-game name"
-                        error={formErrors[`member${index}InGameName`]}
+                        label="Partner In-Game Name"
+                        value={partnerInGameName}
+                        onChange={(e) => setPartnerInGameName(e.target.value)}
+                        placeholder="Enter partner's in-game name"
+                        error={formErrors.partnerInGameName}
                         required
                       />
                     </div>
                   </div>
-                ))}
+                )}
 
-              <div className="flex items-start gap-2 text-sm text-slate-600 p-3 bg-slate-50 rounded-lg">
-                <FiInfo className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                <div>
-                  <div className="font-medium text-slate-700 mb-1">Important:</div>
-                  <ul className="space-y-1 text-slate-600">
-                    <li>• Details must be correct (changes not allowed later)</li>
-                    <li>• All BGMI IDs must be unique</li>
-                    <li>• You are registered as captain automatically</li>
-                  </ul>
+                {/* Squad */}
+                {tournament.tournamentType === "squad" &&
+                  members.map((member, index) => (
+                    <div key={index} className="border border-slate-200 rounded-xl p-4 hover:border-blue-300 transition-colors">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="h-8 w-8 rounded-lg bg-gradient-to-r from-blue-100 to-cyan-100 flex items-center justify-center">
+                          <span className="font-bold text-blue-600">{index + 1}</span>
+                        </div>
+                        <div>
+                          <span className="font-medium text-slate-800">Teammate {index + 1}</span>
+                          <div className="text-xs text-slate-500">Required</div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <Input
+                          label="BGMI ID"
+                          value={member.bgmiId}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setMembers((prev) => prev.map((x, i) => (i === index ? { ...x, bgmiId: v } : x)));
+                          }}
+                          placeholder="Enter teammate's BGMI ID"
+                          error={formErrors[`member${index}BgmiId`]}
+                          required
+                        />
+                        <Input
+                          label="In-Game Name"
+                          value={member.inGameName}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setMembers((prev) => prev.map((x, i) => (i === index ? { ...x, inGameName: v } : x)));
+                          }}
+                          placeholder="Enter teammate's in-game name"
+                          error={formErrors[`member${index}InGameName`]}
+                          required
+                        />
+                      </div>
+                    </div>
+                  ))}
+
+                <div className="flex items-start gap-2 text-sm text-slate-600 p-3 bg-slate-50 rounded-lg">
+                  <FiInfo className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <div className="font-medium text-slate-700 mb-1">Important:</div>
+                    <ul className="space-y-1 text-slate-600">
+                      <li>• Details must be correct (changes not allowed later)</li>
+                      <li>• All BGMI IDs must be unique</li>
+                      <li>• You are registered as captain automatically</li>
+                    </ul>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
+
             {/* PAYMENT */}
             {activeTab === "payment" && (
               <div className="space-y-6">
@@ -805,22 +791,22 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
             </div>
           </div>
 
-          {/* close icon slot for header if your Modal supports custom close */}
           <button className="hidden" type="button">
             <FiXCircle />
           </button>
         </div>
       </Modal>
 
+      {/* ✅ Manual Payment Popup - Opens OUTSIDE main modal */}
       <ManualPaymentModal
         open={manualOpen}
         onClose={() => {
           setManualOpen(false);
-          setManualCtx(null);
+          setManualPaymentId(null);
         }}
-        paymentId={manualCtx?.paymentId}
-        amount={manualCtx?.amount}
-        tournamentTitle={manualCtx?.tournamentTitle}
+        paymentId={manualPaymentId}
+        amount={payable}
+        tournamentTitle={tournament?.title}
       />
     </>
   );
