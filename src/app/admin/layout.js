@@ -10,19 +10,41 @@ function AdminBoot({ children }) {
   const dispatch = useDispatch();
   const router = useRouter();
   const user = useSelector((s) => s.auth.user);
-  const loading = useSelector((s) => s.auth.loading);
+  const status = useSelector((s) => s.auth.status); // ✅ Use 'status' instead of 'loading'
 
+  // ✅ Fetch user data on mount
   useEffect(() => {
     dispatch(fetchMe());
   }, [dispatch]);
 
+  // ✅ Redirect logic - runs after status changes
   useEffect(() => {
-    if (!loading && user && !(user.role === "admin" || user.role === "super_admin")) {
-      router.push("/");
-    }
-  }, [user, loading, router]);
+    // Wait for loading to complete
+    if (status === "loading" || status === "idle") return;
 
-  if (loading) {
+    // ✅ If no user after loading, redirect to login
+    if (status === "succeeded" && !user) {
+      router.push("/login");
+      return;
+    }
+
+    // ✅ If user exists but NOT admin, redirect to login
+    if (status === "succeeded" && user) {
+      if (user.role !== "admin" && user.role !== "super_admin") {
+        router.push("/login");
+        return;
+      }
+    }
+
+    // ✅ If failed to load user, redirect to login
+    if (status === "failed") {
+      router.push("/login");
+      return;
+    }
+  }, [user, status, router]);
+
+  // ✅ Show loading spinner while checking authentication
+  if (status === "loading" || status === "idle") {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center overflow-x-hidden">
         <div className="text-center">
@@ -33,6 +55,22 @@ function AdminBoot({ children }) {
     );
   }
 
+  // ✅ Don't render admin panel if:
+  // - User is null
+  // - User is not admin/super_admin
+  // - Status is failed
+  if (!user || (user.role !== "admin" && user.role !== "super_admin") || status === "failed") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center overflow-x-hidden">
+        <div className="text-center">
+          <div className="h-16 w-16 rounded-full border-4 border-slate-300 border-t-blue-600 animate-spin mx-auto mb-4"></div>
+          <div className="text-slate-700 font-medium">Redirecting to login...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // ✅ Only render admin panel for verified admin users
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 overflow-x-hidden">
       <div className="container py-6 px-4">
@@ -49,7 +87,7 @@ function AdminBoot({ children }) {
                 <div className="flex items-center gap-3 flex-shrink-0">
                   <div className="text-right">
                     <div className="text-sm text-slate-300">Role</div>
-                    <div className="font-medium capitalize">{user?.role}</div>
+                    <div className="font-medium capitalize">{user?.role?.replace('_', ' ')}</div>
                   </div>
                   <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center font-bold">
                     {user?.name?.charAt(0)?.toUpperCase()}
