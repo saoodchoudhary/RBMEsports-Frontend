@@ -21,11 +21,11 @@ async function request(path, { method = "GET", body, headers } = {}) {
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(headers || {})
+      ...(headers || {}),
     },
     credentials: "include",
     body: body ? JSON.stringify(body) : undefined,
-    cache: "no-store"
+    cache: "no-store",
   });
 
   const data = await res.json().catch(() => null);
@@ -47,7 +47,6 @@ export const api = {
   login: (payload) => request("/auth/login", { method: "POST", body: payload }),
   logout: () => request("/auth/logout", { method: "POST" }),
   me: () => request("/auth/me"),
-
 
 
   
@@ -120,7 +119,6 @@ export const api = {
   matchResults: (id) => request(`/tournaments/${id}/match-results`),
   room: (id) => request(`/tournaments/${id}/room`),
 
-  // ✅ NEW: Check existing registration
   getMyTournamentRegistration: (id) => request(`/tournaments/${id}/my-registration`),
 
   registerSoloDuo: (id, payload) =>
@@ -136,8 +134,8 @@ export const api = {
   verifyPayment: (payload) => request("/payments/verify", { method: "POST", body: payload }),
   myPayments: () => request("/payments/my-payments"),
 
-  // Manual payment proof submit
-  submitManualProof: (paymentId, payload) =>
+  // ✅ Manual payment proof
+  submitManualPaymentProof: (paymentId, payload) =>
     request(`/payments/${paymentId}/manual-proof`, { method: "POST", body: payload }),
 
   // Wallet
@@ -153,9 +151,9 @@ export const api = {
   winnersRecent: (limit = 10) => request(`/winners/recent?limit=${limit}`),
   winnersFeatured: () => request("/winners/featured"),
 
-  // Admin
+  // Admin (keep as you need)
   adminDashboard: () => request("/admin/dashboard"),
   adminUsers: (qs = "") => request(`/admin/users${qs}`),
   adminBanUser: (id, reason) => request(`/admin/users/${id}/ban`, { method: "PUT", body: { reason } }),
-  adminUnbanUser: (id) => request(`/admin/users/${id}/unban`, { method: "PUT" })
+  adminUnbanUser: (id) => request(`/admin/users/${id}/unban`, { method: "PUT" }),
 };

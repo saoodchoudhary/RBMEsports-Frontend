@@ -18,12 +18,7 @@ import {
   GiModernCity,
   GiEyeTarget,
   GiMoneyStack,
-  GiSwordsPower,
   GiShield,
-  GiBattleGear,
-  GiHelmet,
-  GiSkull,
-  GiBulletImpact,
   GiMachineGun
 } from "react-icons/gi";
 import {
@@ -33,7 +28,6 @@ import {
   FiBarChart2,
   FiVideo,
   FiDollarSign,
-  FiClock,
   FiAlertTriangle,
   FiCheckCircle,
   FiXCircle,
@@ -42,7 +36,7 @@ import {
   FiClock as FiClockIcon
 } from "react-icons/fi";
 import { BsFillPeopleFill } from "react-icons/bs";
-import { MdOutlineEmojiEvents, MdSecurity, MdVerified } from "react-icons/md";
+import { MdVerified } from "react-icons/md";
 import React from "react";
 
 const mapIcons = {
@@ -78,7 +72,8 @@ function safeDate(d) {
 }
 
 export default async function TournamentDetailPage({ params }) {
-  const {id} = await params;
+  const { id } = await params;
+
   const res = await api.getTournament(id);
   const t = res.data;
 
@@ -215,7 +210,6 @@ export default async function TournamentDetailPage({ params }) {
     <div className="w-full ">
       <div className="">
         <div className="space-y-6 sm:space-y-8 lg:space-y-10">
-
           {/* ===== HERO SECTION ===== */}
           <section className="relative overflow-hidden rounded-xl sm:rounded-2xl lg:rounded-3xl text-white">
             {/* Background Image with Gradient */}
@@ -229,7 +223,7 @@ export default async function TournamentDetailPage({ params }) {
               }}
             >
               <div className="absolute inset-0 bg-gradient-to-br from-gray-900/80 via-gray-900/60 to-gray-900/40"></div>
-              
+
               {/* Decorative Elements */}
               <div className="absolute inset-0 opacity-10">
                 <div className="absolute top-8 left-8 h-16 w-16 rounded-full border border-white/20"></div>
@@ -243,7 +237,6 @@ export default async function TournamentDetailPage({ params }) {
 
             <div className="relative z-10 p-5 sm:p-6 lg:p-8">
               <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6 lg:gap-8">
-                
                 {/* Left Content */}
                 <div className="flex-1">
                   {/* Badges */}
@@ -336,7 +329,7 @@ export default async function TournamentDetailPage({ params }) {
                       </div>
                     </div>
 
-                    {/* Join Button */}
+                    {/* Join Button (✅ this should be updated inside JoinClient) */}
                     <div className="mt-4">
                       <JoinClient tournament={t} />
                     </div>
@@ -436,7 +429,6 @@ export default async function TournamentDetailPage({ params }) {
 
           {/* ===== QUICK LINKS ===== */}
           <section className="grid gap-3 sm:gap-4 md:grid-cols-3">
-            {/* Leaderboard Link */}
             <a
               href={`/tournaments/${t._id}/leaderboard`}
               className="bg-white rounded-lg sm:rounded-xl border border-gray-200 p-4 sm:p-5 hover:shadow-lg transition-all hover:border-blue-300 group"
@@ -453,7 +445,6 @@ export default async function TournamentDetailPage({ params }) {
               </div>
             </a>
 
-            {/* Results Link */}
             <a
               href={`/tournaments/${t._id}/results`}
               className="bg-white rounded-lg sm:rounded-xl border border-gray-200 p-4 sm:p-5 hover:shadow-lg transition-all hover:border-gray-400 group"
@@ -470,7 +461,6 @@ export default async function TournamentDetailPage({ params }) {
               </div>
             </a>
 
-            {/* Room Details Link */}
             <a
               href={`/tournaments/${t._id}/room`}
               className="bg-white rounded-lg sm:rounded-xl border border-gray-200 p-4 sm:p-5 hover:shadow-lg transition-all hover:border-blue-300 group"
@@ -488,146 +478,7 @@ export default async function TournamentDetailPage({ params }) {
             </a>
           </section>
 
-          {/* ===== DETAILS GRID ===== */}
-          <section className="grid gap-5 sm:gap-6 lg:grid-cols-2">
-            {/* Tournament Schedule */}
-            <div className="bg-white rounded-xl sm:rounded-2xl border border-gray-200 p-5 sm:p-6 shadow-sm">
-              <h3 className="font-bold text-gray-900 text-base sm:text-lg mb-4 flex items-center gap-2">
-                <GiCalendar className="w-5 h-5 text-blue-600" />
-                Tournament Schedule
-              </h3>
-
-              <div className="space-y-3 sm:space-y-4">
-                {/* Start Date */}
-                <div className="flex items-center justify-between p-3 sm:p-4 bg-gradient-to-r from-blue-50 to-blue-50 rounded-lg border border-blue-200">
-                  <div className="flex items-center gap-3">
-                    <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-lg bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center">
-                      <GiCalendar className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
-                    </div>
-                    <div>
-                      <div className="font-semibold text-gray-900 text-sm sm:text-base">Tournament Date</div>
-                      <div className="text-xs sm:text-sm text-gray-600">{formatDate(t.tournamentStartDate)}</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-[10px] sm:text-xs text-gray-500">Starts</div>
-                    <div className="text-xs sm:text-sm font-medium text-gray-900">{formatShortDate(t.tournamentStartDate)}</div>
-                  </div>
-                </div>
-
-                {/* Start Time */}
-                <div className="flex items-center justify-between p-3 sm:p-4 bg-gradient-to-r from-gray-50 to-gray-50 rounded-lg border border-gray-200">
-                  <div className="flex items-center gap-3">
-                    <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-lg bg-gradient-to-br from-gray-100 to-gray-50 flex items-center justify-center">
-                      <GiClockwork className="w-4 h-4 sm:w-5 sm:h-5 text-gray-700" />
-                    </div>
-                    <div>
-                      <div className="font-semibold text-gray-900 text-sm sm:text-base">Start Time</div>
-                      <div className="text-xs sm:text-sm text-gray-600">{formatTime(t.tournamentStartDate)} IST</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-[10px] sm:text-xs text-gray-500">Duration</div>
-                    <div className="text-xs sm:text-sm font-medium text-gray-900">{safeNum(t.totalMatches, 1)} matches</div>
-                  </div>
-                </div>
-
-                {/* Registration Closes */}
-                <div className="flex items-center justify-between p-3 sm:p-4 bg-gradient-to-r from-amber-50 to-amber-50 rounded-lg border border-amber-200">
-                  <div className="flex items-center gap-3">
-                    <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-lg bg-gradient-to-br from-amber-100 to-amber-50 flex items-center justify-center">
-                      <FiShieldIcon className="w-4 h-4 sm:w-5 sm:h-5 text-amber-600" />
-                    </div>
-                    <div>
-                      <div className="font-semibold text-gray-900 text-sm sm:text-base">Registration Closes</div>
-                      <div className="text-xs sm:text-sm text-gray-600">
-                        {formatDate(t.registrationEndDate)} at {formatTime(t.registrationEndDate)}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-[10px] sm:text-xs text-gray-500">Status</div>
-                    <div
-                      className={`text-xs sm:text-sm font-semibold px-2 py-1 rounded-md ${
-                        isRegistrationOpen 
-                          ? "text-blue-600 bg-blue-100" 
-                          : "text-gray-600 bg-gray-100"
-                      }`}
-                    >
-                      {isRegistrationOpen ? "Open" : "Closed"}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Prize Distribution */}
-            <div className="bg-white rounded-xl sm:rounded-2xl border border-gray-200 p-5 sm:p-6 shadow-sm">
-              <h3 className="font-bold text-gray-900 text-base sm:text-lg mb-4 flex items-center gap-2">
-                <GiMoneyStack className="w-5 h-5 text-blue-600" />
-                Prize Distribution
-              </h3>
-
-              <div className="space-y-2 sm:space-y-3">
-                {t?.prizeDistribution?.slice(0, 5).map((prize, index) => (
-                  <div
-                    key={index}
-                    className={`flex items-center justify-between p-3 sm:p-3.5 rounded-lg transition-all hover:shadow-sm ${
-                      index === 0
-                        ? "bg-gradient-to-r from-blue-50 to-blue-50 border border-blue-200"
-                        : index === 1
-                          ? "bg-gradient-to-r from-gray-50 to-gray-50 border border-gray-200"
-                          : index === 2
-                            ? "bg-gradient-to-r from-gray-50 to-gray-50 border border-gray-200"
-                            : "bg-white border border-gray-200"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 sm:gap-3">
-                      <div
-                        className={`h-7 w-7 sm:h-8 sm:w-8 rounded-full flex items-center justify-center ${
-                          index === 0
-                            ? "bg-gradient-to-br from-blue-600 to-blue-700"
-                            : index === 1
-                              ? "bg-gradient-to-br from-gray-600 to-gray-700"
-                              : index === 2
-                                ? "bg-gradient-to-br from-amber-600 to-amber-700"
-                                : "bg-gradient-to-br from-gray-400 to-gray-500"
-                        }`}
-                      >
-                        <span className="text-white font-bold text-xs sm:text-sm">#{prize.rank}</span>
-                      </div>
-                      <div>
-                        <div className="font-semibold text-gray-900 text-xs sm:text-sm">
-                          {prize.rank === 1
-                            ? "1st Prize"
-                            : prize.rank === 2
-                              ? "2nd Prize"
-                              : prize.rank === 3
-                                ? "3rd Prize"
-                                : `${prize.rank}th Prize`}
-                        </div>
-                        {prize.percentage && (
-                          <div className="text-[10px] sm:text-xs text-gray-500">{prize.percentage}% of pool</div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-sm sm:text-base font-bold text-blue-600">
-                      ₹{safeNum(prize.amount, 0).toLocaleString("en-IN")}
-                    </div>
-                  </div>
-                ))}
-
-                {(!t?.prizeDistribution || t.prizeDistribution.length === 0) && (
-                  <div className="text-center py-6 sm:py-8 text-gray-500">
-                    <GiTrophy className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-2 opacity-30" />
-                    <div className="text-xs sm:text-sm">Prize distribution details coming soon</div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
-
-          {/* ===== RULES & INFORMATION ===== */}
+          {/* ===== RULES & INFORMATION (unchanged) ===== */}
           <section className="bg-white rounded-xl sm:rounded-2xl border border-gray-200 p-5 sm:p-6 shadow-sm">
             <h3 className="font-bold text-gray-900 text-base sm:text-lg mb-5 sm:mb-6 flex items-center gap-2">
               <FiAward className="w-5 h-5 text-blue-600" />
@@ -635,7 +486,6 @@ export default async function TournamentDetailPage({ params }) {
             </h3>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 sm:gap-6">
-              {/* Scoring System */}
               <div>
                 <h4 className="font-semibold text-gray-800 text-sm sm:text-base mb-3 flex items-center gap-2">
                   <GiTargetPrize className="w-4 h-4 text-blue-600" />
@@ -677,7 +527,6 @@ export default async function TournamentDetailPage({ params }) {
                 </ul>
               </div>
 
-              {/* Tournament Format */}
               <div>
                 <h4 className="font-semibold text-gray-800 text-sm sm:text-base mb-3 flex items-center gap-2">
                   <GiTeamIdea className="w-4 h-4 text-gray-700" />
@@ -738,24 +587,21 @@ export default async function TournamentDetailPage({ params }) {
               </div>
             </div>
 
-            {/* Additional Info */}
             <div className="mt-5 sm:mt-6 pt-4 sm:pt-5 border-t border-gray-200">
               <div className="flex items-start gap-2 text-xs sm:text-sm text-gray-600">
                 <FiInfo className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
                 <div>
-                  <span className="font-semibold text-gray-900">Note:</span> Tournament rules are final and binding. 
+                  <span className="font-semibold text-gray-900">Note:</span> Tournament rules are final and binding.
                   Any violation may result in disqualification and forfeiture of entry fee.
                 </div>
               </div>
             </div>
           </section>
 
-          {/* ===== VERIFIED BADGE ===== */}
           <div className="flex items-center justify-center gap-2 pt-2">
             <MdVerified className="w-4 h-4 text-blue-600" />
             <span className="text-xs text-gray-500">RBM ESports • Verified Tournament • Skill-based competition</span>
           </div>
-
         </div>
       </div>
     </div>

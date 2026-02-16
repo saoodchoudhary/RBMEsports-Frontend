@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { api } from "@/lib/api";
+import { useSelector, useDispatch } from "react-redux";
+import { showToast } from "@/store/uiSlice";
 import {
   GiTrophy,
   GiRank3,
@@ -17,8 +20,7 @@ import {
   GiCaveEntrance,
   GiModernCity,
   GiMachineGun,
-  GiSkills,
-  GiBulletImpact
+  GiSkills
 } from "react-icons/gi";
 import {
   FiUsers,
@@ -69,13 +71,24 @@ function safeNum(n, fallback = 0) {
   return Number.isFinite(v) ? v : fallback;
 }
 
-/**
- * ✅ NEW: onJoin callback prop
- * - onJoin(tournament) will open JoinTournamentModal from parent page (Home/Tournaments list)
- */
+function normalizePaymentStatus(s) {
+  const x = String(s || "").toLowerCase().trim();
+  // participant: paid/pending/failed
+  if (x === "paid") return "success";
+  return x; // pending|success|failed|on_hold...
+}
+
 export default function TournamentCard({ t, onJoin }) {
+  const dispatch = useDispatch();
+  const user = useSelector((s) => s.auth.user);
+
   const [hover, setHover] = useState(false);
   const [imageError, setImageError] = useState(false);
+
+  // ✅ we will cache status per card once loaded
+  const [checking, setChecking] = useState(false);
+  const [regStatus, setRegStatus] = useState(null); 
+  // regStatus: { registered, paymentStatus, paymentId }
 
   const formatDate = (dateString) => {
     if (!dateString) return "—";
@@ -184,13 +197,189 @@ export default function TournamentCard({ t, onJoin }) {
     return mapImageFallbacks[t?.map] || "/maps/default.jpg";
   };
 
+  // ✅ Load status in background when user exists (so button text updates)
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadStatus() {
+      if (!user?.id || !t?._id) {
+        setRegStatus(null);
+        return;
+      }
+
+      try {
+        const res = await api.getMyTournamentRegistration(t._id);
+        if (ignore) return;
+
+        if (res?.success) {
+          const data = res.data || {};
+          setRegStatus({
+            registered: Boolean(data.registered),
+            paymentId: data.paymentId || null,
+            paymentStatus: normalizePaymentStatus(data.paymentStatus)
+          });
+        } else {
+          setRegStatus(null);
+        }
+      } catch {
+        // silent fail -> keep default
+        setRegStatus(null);
+      }
+    }
+
+    loadStatus();
+    return () => {
+      ignore = true;
+    };
+  }, [user?.id, t?._id]);
+
+  const buttonMeta = useMemo(() => {
+    const registered = Boolean(regStatus?.registered);
+    const st = normalizePaymentStatus(regStatus?.paymentStatus);
+
+    if (!user?.id) {
+      return {
+        text: "JOIN BATTLE",
+        subText: "Login required",
+        variantClass:
+          "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg shadow-blue-600/20",
+        disabled: false
+      };
+    }
+
+    if (registered) {
+      if (st === "success") {
+        return {
+          text: "ALREADY REGISTERED",
+          subText: "Slot confirmed",
+          variantClass: "bg-gray-900 text-white shadow-lg",
+          disabled: false
+        };
+      }
+      if (st === "pending") {
+        return {
+          text: "PAYMENT PENDING",
+          subText: "Submit UTR to confirm",
+          variantClass: "bg-blue-700 text-white shadow-lg",
+          disabled: false
+        };
+      }
+      if (st === "on_hold") {
+        return {
+          text: "UNDER REVIEW",
+          subText: "Admin verification pending",
+          variantClass: "bg-amber-600 text-white shadow-lg",
+          disabled: false
+        };
+      }
+      if (st === "failed") {
+        return {
+          text: "PAYMENT FAILED",
+          subText: "Try again",
+          variantClass: "bg-red-600 text-white shadow-lg",
+          disabled: false
+        };
+      }
+      return {
+        text: "ALREADY REGISTERED",
+        subText: "Status unknown",
+        variantClass: "bg-gray-800 text-white shadow-lg",
+        disabled: false
+      };
+    }
+
+    if (!isRegistrationOpen) {
+      return {
+        text: "REGISTRATION CLOSED",
+        subText: "Not available",
+        variantClass: "bg-gray-300 text-gray-600 cursor-not-allowed",
+        disabled: true
+      };
+    }
+
+    return {
+      text: "JOIN BATTLE",
+      subText: "Register now",
+      variantClass:
+        "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg shadow-blue-600/20",
+      disabled: false
+    };
+  }, [regStatus, isRegistrationOpen, user?.id]);
+
+  // ✅ click handler
+  async function handleJoinClick() {
+    if (!user) {
+      dispatch(showToast({ type: "error", title: "Login Required", message: "Please login to join tournament" }));
+      return;
+    }
+
+    if (!isRegistrationOpen && !regStatus?.registered) return;
+
+    // If we already know status: handle fast
+    const registered = Boolean(regStatus?.registered);
+    const st = normalizePaymentStatus(regStatus?.paymentStatus);
+
+    if (registered && st === "success") {
+      dispatch(showToast({ type: "info", title: "Already Registered", message: "You are already registered for this tournament" }));
+      return;
+    }
+
+    // pending / on_hold -> open join modal to show manual payment modal
+    if (registered && (st === "pending" || st === "on_hold")) {
+      onJoin?.(t);
+      return;
+    }
+
+    // Otherwise do a fresh check (to be safe)
+    setChecking(true);
+    try {
+      const res = await api.getMyTournamentRegistration(t._id);
+
+      if (res?.success && res.data?.registered) {
+        const pst = normalizePaymentStatus(res.data.paymentStatus);
+
+        // cache it
+        setRegStatus({
+          registered: true,
+          paymentId: res.data.paymentId || null,
+          paymentStatus: pst
+        });
+
+        if (pst === "success") {
+          dispatch(showToast({ type: "info", title: "Already Registered", message: "You are already registered for this tournament" }));
+          return;
+        }
+
+        if (pst === "pending") {
+          dispatch(showToast({ type: "info", title: "Payment Pending", message: "Please submit UTR to confirm registration" }));
+          onJoin?.(t);
+          return;
+        }
+
+        if (pst === "on_hold") {
+          dispatch(showToast({ type: "info", title: "Under Review", message: "Payment proof submitted. Admin verification pending." }));
+          onJoin?.(t);
+          return;
+        }
+      }
+
+      // Not registered
+      onJoin?.(t);
+    } catch (error) {
+      // Safe fallback
+      onJoin?.(t);
+    } finally {
+      setChecking(false);
+    }
+  }
+
   return (
     <div
       className="group relative overflow-hidden rounded-2xl bg-white shadow-md transition-all duration-300 hover:shadow-xl border border-gray-100"
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
-      {/* FULL Ribbon - Minimal Red */}
+      {/* FULL Ribbon */}
       {!isRegistrationOpen && t?.status === "registration_open" && (
         <div className="absolute top-4 right-4 z-20">
           <div className="bg-red-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-lg flex items-center gap-1.5">
@@ -372,22 +561,28 @@ export default function TournamentCard({ t, onJoin }) {
           </div>
         </div>
 
-        {/* ✅ ALWAYS 2 BUTTONS */}
+        {/* Buttons */}
         <div className="grid grid-cols-2 gap-2">
           <Button
             type="button"
-            onClick={() => onJoin?.(t)}
-            disabled={!isRegistrationOpen}
-            className={`
-              w-full flex items-center justify-center gap-2 py-3 font-bold transition-all
-              ${isRegistrationOpen
-                ? "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg shadow-blue-600/20"
-                : "bg-gray-300 text-gray-600 cursor-not-allowed"
-              }
-            `}
+            onClick={handleJoinClick}
+            disabled={buttonMeta.disabled || checking}
+            className={`w-full flex flex-col items-center justify-center py-3 font-bold transition-all ${buttonMeta.variantClass}`}
           >
-            <GiMachineGun className="w-4 h-4" />
-            JOIN BATTLE
+            {checking ? (
+              <div className="flex items-center gap-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                <span>CHECKING...</span>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-center gap-2">
+                  <GiMachineGun className="w-4 h-4" />
+                  <span>{buttonMeta.text}</span>
+                </div>
+                <div className="text-[10px] font-medium opacity-90">{buttonMeta.subText}</div>
+              </>
+            )}
           </Button>
 
           <Link href={`/tournaments/${t?._id}`} className="block">
