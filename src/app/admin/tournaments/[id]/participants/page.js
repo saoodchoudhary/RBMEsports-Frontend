@@ -13,14 +13,21 @@ import {
   FiSearch,
   FiFilter,
   FiDownload,
-  FiEye
+  FiEye,
+  FiTrash2
 } from "react-icons/fi";
 import { GiTeamIdea, GiCrossedSwords } from "react-icons/gi";
 import { BsFillPeopleFill, BsThreeDotsVertical } from "react-icons/bs";
 import { MdOutlinePayment } from "react-icons/md";
+import { useDispatch } from "react-redux";
+import { showToast } from "@/store/uiSlice";
 
 export default function AdminParticipantsPage({ params }) {
-  const {id} = React.use(params);
+  const dispatch = useDispatch();
+
+  // ✅ FIX: params is plain object in Next.js app router
+  const { id } = React.use(params);
+
   const [data, setData] = useState(null);
   const [tournament, setTournament] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -31,6 +38,8 @@ export default function AdminParticipantsPage({ params }) {
   // teams | individuals
   const [viewMode, setViewMode] = useState("teams");
 
+  const [removing, setRemoving] = useState(false);
+
   useEffect(() => {
     if (!id) return;
     loadParticipants();
@@ -40,10 +49,7 @@ export default function AdminParticipantsPage({ params }) {
   const loadParticipants = async () => {
     try {
       setLoading(true);
-      const [pRes, tRes] = await Promise.all([
-        api.adminParticipants(id),
-        api.getTournament(id)
-      ]);
+      const [pRes, tRes] = await Promise.all([api.adminParticipants(id), api.getTournament(id)]);
 
       setData(pRes.data);
       setTournament(tRes.data);
@@ -52,6 +58,7 @@ export default function AdminParticipantsPage({ params }) {
       else setViewMode("individuals");
     } catch (error) {
       console.error("Failed to load participants:", error);
+      dispatch(showToast({ title: "Error", message: error?.message || "Failed to load participants", type: "error" }));
     } finally {
       setLoading(false);
     }
@@ -59,22 +66,52 @@ export default function AdminParticipantsPage({ params }) {
 
   const getPaymentStatusColor = (status) => {
     switch (String(status || "").toLowerCase()) {
-      case "paid": return "bg-green-100 text-green-800";
-      case "pending": return "bg-amber-100 text-amber-800";
-      case "failed": return "bg-red-100 text-red-800";
-      default: return "bg-slate-100 text-slate-800";
+      case "paid":
+        return "bg-green-100 text-green-800";
+      case "pending":
+        return "bg-amber-100 text-amber-800";
+      case "failed":
+        return "bg-red-100 text-red-800";
+      default:
+        return "bg-slate-100 text-slate-800";
     }
   };
 
   const getRegistrationStatusColor = (status) => {
     switch (String(status || "").toLowerCase()) {
-      case "verified": return "bg-blue-100 text-blue-800";
-      case "registered": return "bg-green-100 text-green-800";
-      case "pending": return "bg-amber-100 text-amber-800";
-      case "disqualified": return "bg-red-100 text-red-800";
-      default: return "bg-slate-100 text-slate-800";
+      case "verified":
+        return "bg-blue-100 text-blue-800";
+      case "registered":
+        return "bg-green-100 text-green-800";
+      case "pending":
+        return "bg-amber-100 text-amber-800";
+      case "disqualified":
+        return "bg-red-100 text-red-800";
+      default:
+        return "bg-slate-100 text-slate-800";
     }
   };
+
+  async function removeByPayment(paymentId, reasonText) {
+    if (!paymentId) {
+      dispatch(showToast({ title: "Missing paymentId", message: "PaymentId not found for this row.", type: "error" }));
+      return;
+    }
+
+    const ok = window.confirm("Remove this entry? This will reject payment and free the slot.");
+    if (!ok) return;
+
+    try {
+      setRemoving(true);
+      await api.adminRejectPayment(paymentId, { reason: reasonText || "Removed by admin from participants page" });
+      dispatch(showToast({ title: "Removed", message: "Entry removed and slot freed.", type: "success" }));
+      await loadParticipants();
+    } catch (e) {
+      dispatch(showToast({ title: "Error", message: e?.message || "Failed to remove", type: "error" }));
+    } finally {
+      setRemoving(false);
+    }
+  }
 
   const filtered = useMemo(() => {
     if (!data) return [];
@@ -83,22 +120,17 @@ export default function AdminParticipantsPage({ params }) {
 
     // TEAMS
     if (viewMode === "teams" && Array.isArray(data)) {
-      return data
-        .filter((team) => {
-          // status filter
-          if (filterStatus !== "all" && team.paymentStatus !== filterStatus) return false;
+      return data.filter((team) => {
+        if (filterStatus !== "all" && team.paymentStatus !== filterStatus) return false;
+        if (!term) return true;
 
-          if (!term) return true;
+        const captainName = team.captain?.userId?.name || "";
+        const captainBgmi = team.captain?.bgmiId || "";
+        const memText = (team.members || []).map((m) => `${m.inGameName || ""} ${m.bgmiId || ""}`).join(" ");
 
-          const captainName = team.captain?.userId?.name || "";
-          const captainBgmi = team.captain?.bgmiId || "";
-          const memText = (team.members || [])
-            .map((m) => `${m.inGameName || ""} ${m.bgmiId || ""}`)
-            .join(" ");
-
-          const hay = `${team.teamName || ""} ${captainName} ${captainBgmi} ${memText}`.toLowerCase();
-          return hay.includes(term);
-        });
+        const hay = `${team.teamName || ""} ${captainName} ${captainBgmi} ${memText}`.toLowerCase();
+        return hay.includes(term);
+      });
     }
 
     // INDIVIDUALS
@@ -153,7 +185,9 @@ export default function AdminParticipantsPage({ params }) {
       <div className="space-y-6">
         <div className="h-10 skeleton rounded-lg w-64"></div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[1,2,3,4].map((i) => <div key={i} className="h-24 skeleton rounded-xl"></div>)}
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-24 skeleton rounded-xl"></div>
+          ))}
         </div>
         <div className="h-64 skeleton rounded-xl"></div>
       </div>
@@ -167,11 +201,17 @@ export default function AdminParticipantsPage({ params }) {
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Tournament Participants</h1>
           <p className="text-slate-600 mt-1">
-            {tournament?.title ? `${tournament.title} • ` : ""}{viewMode === "teams" ? "Teams" : "Players"}
+            {tournament?.title ? `${tournament.title} • ` : ""}
+            {viewMode === "teams" ? "Teams" : "Players"}
           </p>
         </div>
         <div className="flex gap-3">
-          <Button variant="outline" className="flex items-center gap-2" onClick={() => alert("CSV export can be added next.")}>
+          <Button
+            variant="outline"
+            className="flex items-center gap-2"
+            type="button"
+            onClick={() => alert("CSV export can be added next.")}
+          >
             <FiDownload className="w-4 h-4" />
             Export CSV
           </Button>
@@ -187,9 +227,7 @@ export default function AdminParticipantsPage({ params }) {
         <Card className="p-4">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-2xl font-bold text-slate-800">
-                {viewMode === "teams" ? totals.teams : totals.players}
-              </div>
+              <div className="text-2xl font-bold text-slate-800">{viewMode === "teams" ? totals.teams : totals.players}</div>
               <div className="text-sm text-slate-600">{viewMode === "teams" ? "Teams" : "Participants"}</div>
             </div>
             <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-100 to-blue-50 flex items-center justify-center">
@@ -253,7 +291,7 @@ export default function AdminParticipantsPage({ params }) {
               <option value="pending">Pending</option>
               <option value="failed">Failed</option>
             </select>
-            <Button variant="outline" className="flex items-center gap-2" onClick={loadParticipants}>
+            <Button variant="outline" className="flex items-center gap-2" onClick={loadParticipants} type="button">
               <FiFilter className="w-4 h-4" />
               Apply
             </Button>
@@ -272,108 +310,131 @@ export default function AdminParticipantsPage({ params }) {
           </div>
 
           <div className="grid grid-cols-1 gap-4">
-            {filtered.map((team) => (
-              <Card key={team._id} className="p-6 hover:shadow-lg transition-shadow">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-start gap-4">
-                    <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center">
-                      <GiTeamIdea className="w-6 h-6 text-purple-600" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-3">
-                        <h3 className="text-lg font-bold text-slate-800">{team.teamName || "Unnamed Team"}</h3>
-                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${getRegistrationStatusColor(team.registrationStatus)}`}>
-                          {team.registrationStatus || "registered"}
-                        </span>
+            {filtered.map((team) => {
+              const canRemove = String(team.paymentStatus || "").toLowerCase() === "pending";
+              const paymentId = team.paymentId?._id || team.paymentId; // populate or raw id
+              return (
+                <Card key={team._id} className="p-6 hover:shadow-lg transition-shadow">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-start gap-4">
+                      <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center">
+                        <GiTeamIdea className="w-6 h-6 text-purple-600" />
                       </div>
-                      <div className="flex items-center gap-4 mt-2 text-sm text-slate-600">
-                        <span className="flex items-center gap-1">
-                          <FiUser className="w-3 h-3" />
-                          {team.captain?.userId?.name || "Captain"}
-                        </span>
-                        <span>•</span>
-                        <span className="flex items-center gap-1">
-                          <MdOutlinePayment className="w-3 h-3" />
-                          BGMI: {team.captain?.bgmiId || "N/A"}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <span className={`px-3 py-1.5 rounded-full text-xs font-bold ${getPaymentStatusColor(team.paymentStatus)}`}>
-                      {String(team.paymentStatus || "pending").toUpperCase()}
-                    </span>
-                    <button type="button" className="p-2 hover:bg-slate-100 rounded-lg" onClick={() => {}}>
-                      <BsThreeDotsVertical className="w-4 h-4 text-slate-600" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Members */}
-                <div className="border-t border-slate-200 pt-4">
-                  <h4 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-                    <BsFillPeopleFill className="w-4 h-4" />
-                    Team Members ({team.members?.length || 0})
-                  </h4>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {/* Captain */}
-                    <div className="p-3 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="font-medium text-slate-800">Captain</div>
-                          <div className="text-sm text-slate-600">
-                            {team.captain?.inGameName || team.captain?.userId?.name || "—"}
-                          </div>
+                      <div>
+                        <div className="flex items-center gap-3">
+                          <h3 className="text-lg font-bold text-slate-800">{team.teamName || "Unnamed Team"}</h3>
+                          <span className={`px-2 py-1 rounded-full text-xs font-bold ${getRegistrationStatusColor(team.registrationStatus)}`}>
+                            {team.registrationStatus || "registered"}
+                          </span>
                         </div>
-                        <GiCrossedSwords className="w-5 h-5 text-blue-600" />
+                        <div className="flex items-center gap-4 mt-2 text-sm text-slate-600">
+                          <span className="flex items-center gap-1">
+                            <FiUser className="w-3 h-3" />
+                            {team.captain?.userId?.name || "Captain"}
+                          </span>
+                          <span>•</span>
+                          <span className="flex items-center gap-1">
+                            <MdOutlinePayment className="w-3 h-3" />
+                            BGMI: {team.captain?.bgmiId || "N/A"}
+                          </span>
+                        </div>
                       </div>
-                      <div className="text-xs text-slate-500 mt-2">BGMI: {team.captain?.bgmiId || "—"}</div>
                     </div>
 
-                    {/* Members */}
-                    {(team.members || []).map((member, idx) => (
-                      <div key={idx} className="p-3 bg-gradient-to-br from-slate-50 to-slate-100 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <span className={`px-3 py-1.5 rounded-full text-xs font-bold ${getPaymentStatusColor(team.paymentStatus)}`}>
+                        {String(team.paymentStatus || "pending").toUpperCase()}
+                      </span>
+
+                      {canRemove && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          loading={removing}
+                          className="border-red-300 text-red-600 hover:bg-red-50"
+                          onClick={() => removeByPayment(paymentId, `Removed pending team: ${team.teamName || team._id}`)}
+                        >
+                          <FiTrash2 className="w-4 h-4 mr-1" />
+                          Remove
+                        </Button>
+                      )}
+
+                      <button type="button" className="p-2 hover:bg-slate-100 rounded-lg" onClick={() => {}}>
+                        <BsThreeDotsVertical className="w-4 h-4 text-slate-600" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Members */}
+                  <div className="border-t border-slate-200 pt-4">
+                    <h4 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                      <BsFillPeopleFill className="w-4 h-4" />
+                      Team Members ({team.members?.length || 0})
+                    </h4>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {/* Captain */}
+                      <div className="p-3 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg">
                         <div className="flex items-center justify-between">
                           <div>
-                            <div className="font-medium text-slate-800">Member {idx + 1}</div>
-                            <div className="text-sm text-slate-600">{member.inGameName || "—"}</div>
+                            <div className="font-medium text-slate-800">Captain</div>
+                            <div className="text-sm text-slate-600">
+                              {team.captain?.inGameName || team.captain?.userId?.name || "—"}
+                            </div>
                           </div>
-                          <div className={`px-2 py-1 rounded text-xs ${
-                            member.status === "confirmed" ? "bg-green-100 text-green-800" :
-                            member.status === "pending" ? "bg-amber-100 text-amber-800" :
-                            "bg-slate-100 text-slate-800"
-                          }`}>
-                            {member.status || "confirmed"}
-                          </div>
+                          <GiCrossedSwords className="w-5 h-5 text-blue-600" />
                         </div>
-                        <div className="text-xs text-slate-500 mt-2">BGMI: {member.bgmiId || "—"}</div>
-                        {member.position && <div className="text-xs text-purple-600 mt-1">Role: {member.position}</div>}
+                        <div className="text-xs text-slate-500 mt-2">BGMI: {team.captain?.bgmiId || "—"}</div>
                       </div>
-                    ))}
-                  </div>
-                </div>
 
-                {/* Stats */}
-                <div className="border-t border-slate-200 pt-4 mt-4">
-                  <div className="grid grid-cols-3 gap-4 text-sm">
-                    <div className="text-center">
-                      <div className="font-bold text-slate-800">{team.totalKills || 0}</div>
-                      <div className="text-xs text-slate-600">Total Kills</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="font-bold text-slate-800">{team.totalPoints || 0}</div>
-                      <div className="text-xs text-slate-600">Points</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="font-bold text-slate-800">#{team.placement || "N/A"}</div>
-                      <div className="text-xs text-slate-600">Placement</div>
+                      {/* Members */}
+                      {(team.members || []).map((member, idx) => (
+                        <div key={idx} className="p-3 bg-gradient-to-br from-slate-50 to-slate-100 rounded-lg">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="font-medium text-slate-800">Member {idx + 1}</div>
+                              <div className="text-sm text-slate-600">{member.inGameName || "—"}</div>
+                            </div>
+                            <div
+                              className={`px-2 py-1 rounded text-xs ${
+                                member.status === "confirmed"
+                                  ? "bg-green-100 text-green-800"
+                                  : member.status === "pending"
+                                  ? "bg-amber-100 text-amber-800"
+                                  : "bg-slate-100 text-slate-800"
+                              }`}
+                            >
+                              {member.status || "confirmed"}
+                            </div>
+                          </div>
+                          <div className="text-xs text-slate-500 mt-2">BGMI: {member.bgmiId || "—"}</div>
+                          {member.position && <div className="text-xs text-purple-600 mt-1">Role: {member.position}</div>}
+                        </div>
+                      ))}
                     </div>
                   </div>
-                </div>
-              </Card>
-            ))}
+
+                  {/* Stats */}
+                  <div className="border-t border-slate-200 pt-4 mt-4">
+                    <div className="grid grid-cols-3 gap-4 text-sm">
+                      <div className="text-center">
+                        <div className="font-bold text-slate-800">{team.totalKills || 0}</div>
+                        <div className="text-xs text-slate-600">Total Kills</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="font-bold text-slate-800">{team.totalPoints || 0}</div>
+                        <div className="text-xs text-slate-600">Points</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="font-bold text-slate-800">#{team.placement || "N/A"}</div>
+                        <div className="text-xs text-slate-600">Placement</div>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
           </div>
         </div>
       )}
@@ -389,74 +450,93 @@ export default function AdminParticipantsPage({ params }) {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map((participant, idx) => (
-              <Card key={idx} className="p-4 hover:shadow-lg transition-shadow">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="h-12 w-12 rounded-full bg-gradient-to-br from-blue-100 to-cyan-100 flex items-center justify-center">
-                      <FiUser className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-slate-800">{participant.userId?.name || "Player"}</h3>
-                      <div className="text-sm text-slate-600">{participant.inGameName || "—"}</div>
-                    </div>
-                  </div>
-                  <span className={`px-2 py-1 rounded-full text-xs font-bold ${getPaymentStatusColor(participant.paymentStatus)}`}>
-                    {String(participant.paymentStatus || "pending").toUpperCase()}
-                  </span>
-                </div>
-
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-600">BGMI ID:</span>
-                    <span className="font-medium">{participant.bgmiId || "—"}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-600">Registered:</span>
-                    <span className="font-medium">{participant.registeredAt ? new Date(participant.registeredAt).toLocaleDateString() : "—"}</span>
-                  </div>
-
-                  {participant.partnerInfo?.bgmiId && (
-                    <div className="mt-3 p-2 bg-gradient-to-br from-amber-50 to-orange-50 rounded-lg">
-                      <div className="flex items-center gap-2 text-amber-700 text-sm">
-                        <BsFillPeopleFill className="w-3 h-3" />
-                        <span>Duo Partner</span>
+            {filtered.map((participant, idx) => {
+              const canRemove = String(participant.paymentStatus || "").toLowerCase() === "pending";
+              const paymentId = participant.paymentId?._id || participant.paymentId;
+              return (
+                <Card key={idx} className="p-4 hover:shadow-lg transition-shadow">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="h-12 w-12 rounded-full bg-gradient-to-br from-blue-100 to-cyan-100 flex items-center justify-center">
+                        <FiUser className="w-5 h-5 text-blue-600" />
                       </div>
-                      <div className="text-xs text-amber-800 mt-1">
-                        {participant.partnerInfo.inGameName} ({participant.partnerInfo.bgmiId})
+                      <div>
+                        <h3 className="font-bold text-slate-800">{participant.userId?.name || "Player"}</h3>
+                        <div className="text-sm text-slate-600">{participant.inGameName || "—"}</div>
                       </div>
                     </div>
-                  )}
-                </div>
+                    <span className={`px-2 py-1 rounded-full text-xs font-bold ${getPaymentStatusColor(participant.paymentStatus)}`}>
+                      {String(participant.paymentStatus || "pending").toUpperCase()}
+                    </span>
+                  </div>
 
-                <div className="mt-4 pt-3 border-t border-slate-200">
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <div>
-                      <div className="font-bold text-slate-800">{participant.totalKills || 0}</div>
-                      <div className="text-xs text-slate-600">Kills</div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600">BGMI ID:</span>
+                      <span className="font-medium">{participant.bgmiId || "—"}</span>
                     </div>
-                    <div>
-                      <div className="font-bold text-slate-800">{participant.totalPoints || 0}</div>
-                      <div className="text-xs text-slate-600">Points</div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600">Registered:</span>
+                      <span className="font-medium">{participant.registeredAt ? new Date(participant.registeredAt).toLocaleDateString() : "—"}</span>
                     </div>
-                    <div>
-                      <div className="font-bold text-slate-800">#{participant.finalRank || "N/A"}</div>
-                      <div className="text-xs text-slate-600">Rank</div>
+
+                    {participant.partnerInfo?.bgmiId && (
+                      <div className="mt-3 p-2 bg-gradient-to-br from-amber-50 to-orange-50 rounded-lg">
+                        <div className="flex items-center gap-2 text-amber-700 text-sm">
+                          <BsFillPeopleFill className="w-3 h-3" />
+                          <span>Duo Partner</span>
+                        </div>
+                        <div className="text-xs text-amber-800 mt-1">
+                          {participant.partnerInfo.inGameName} ({participant.partnerInfo.bgmiId})
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-slate-200">
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div>
+                        <div className="font-bold text-slate-800">{participant.totalKills || 0}</div>
+                        <div className="text-xs text-slate-600">Kills</div>
+                      </div>
+                      <div>
+                        <div className="font-bold text-slate-800">{participant.totalPoints || 0}</div>
+                        <div className="text-xs text-slate-600">Points</div>
+                      </div>
+                      <div>
+                        <div className="font-bold text-slate-800">#{participant.finalRank || "N/A"}</div>
+                        <div className="text-xs text-slate-600">Rank</div>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="mt-4 flex gap-2">
-                  <Button variant="outline" size="sm" className="flex-1" type="button">
-                    <FiEye className="w-3 h-3 mr-1" />
-                    View
-                  </Button>
-                  <Button variant="ghost" size="sm" type="button">
-                    <BsThreeDotsVertical className="w-3 h-3" />
-                  </Button>
-                </div>
-              </Card>
-            ))}
+                  <div className="mt-4 flex gap-2">
+                    {canRemove ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 border-red-300 text-red-600 hover:bg-red-50"
+                        type="button"
+                        loading={removing}
+                        onClick={() => removeByPayment(paymentId, `Removed pending participant: ${participant.userId?.name || participant.bgmiId || ""}`)}
+                      >
+                        <FiTrash2 className="w-3 h-3 mr-1" />
+                        Remove
+                      </Button>
+                    ) : (
+                      <Button variant="outline" size="sm" className="flex-1" type="button" disabled>
+                        <FiEye className="w-3 h-3 mr-1" />
+                        View
+                      </Button>
+                    )}
+
+                    <Button variant="ghost" size="sm" type="button">
+                      <BsThreeDotsVertical className="w-3 h-3" />
+                    </Button>
+                  </div>
+                </Card>
+              );
+            })}
           </div>
         </div>
       )}

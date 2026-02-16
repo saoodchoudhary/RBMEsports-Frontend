@@ -16,11 +16,11 @@ import {
   FiShield,
   FiInfo,
   FiUsers,
-  FiXCircle
+  FiXCircle,
+  FiArrowRight,
+  FiUser
 } from "react-icons/fi";
-import {
-  GiTeamIdea
-} from "react-icons/gi";
+import { GiTeamIdea } from "react-icons/gi";
 import { BsFillPeopleFill } from "react-icons/bs";
 
 import { showToast } from "@/store/uiSlice";
@@ -33,6 +33,47 @@ function emptyMember() {
 function safeNum(n, fallback = 0) {
   const v = Number(n);
   return Number.isFinite(v) ? v : fallback;
+}
+
+function normalizePaymentStatus(s) {
+  const x = String(s || "").toLowerCase().trim();
+  if (x === "paid") return "success";
+  return x;
+}
+
+function TabPill({ active, onClick, icon, label }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold border transition",
+        active
+          ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white border-blue-600 shadow-sm"
+          : "bg-white text-slate-700 border-slate-200 hover:border-blue-300 hover:bg-blue-50"
+      ].join(" ")}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function StatChip({ icon, label, value, tone = "blue" }) {
+  const tones = {
+    blue: "bg-blue-50 border-blue-200 text-blue-800",
+    green: "bg-emerald-50 border-emerald-200 text-emerald-800",
+    amber: "bg-amber-50 border-amber-200 text-amber-800",
+    slate: "bg-slate-50 border-slate-200 text-slate-800"
+  };
+
+  return (
+    <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs sm:text-sm ${tones[tone] || tones.blue}`}>
+      <span className="text-base">{icon}</span>
+      <span className="font-semibold">{label}:</span>
+      <span className="font-bold">{value}</span>
+    </div>
+  );
 }
 
 export default function JoinTournamentModal({ open, onClose, tournament }) {
@@ -55,19 +96,38 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
   const [partnerBgmiId, setPartnerBgmiId] = useState("");
   const [partnerInGameName, setPartnerInGameName] = useState("");
 
-  // Members for squad
+  // Members for squad (EXCLUDING captain)
   const [members, setMembers] = useState([]);
+
+  // ✅ Registration fetch state (fresh from backend)
+  const [checkingReg, setCheckingReg] = useState(false);
+  const [myReg, setMyReg] = useState(null); // { registered, paymentId, paymentStatus, teammates }
 
   // ✅ Manual payment modal state
   const [manualOpen, setManualOpen] = useState(false);
   const [manualPaymentId, setManualPaymentId] = useState(null);
 
-  // ✅ Check existing registration on open
-  const [checkingRegistration, setCheckingRegistration] = useState(false);
-  const [existingRegistration, setExistingRegistration] = useState(null);
-
   const baseAmount = tournament?.isFree ? 0 : safeNum(tournament?.serviceFee, 0);
   const isRegistrationOpen = Boolean(tournament?.isRegistrationOpen) && !Boolean(tournament?.isFull);
+
+  const payable = useMemo(() => couponInfo?.finalAmount ?? baseAmount, [couponInfo, baseAmount]);
+  const discount = safeNum(couponInfo?.discountAmount, 0);
+  const showCoupon = !tournament?.isFree;
+
+  const title = tournament?.title || "Tournament";
+  const typeLabel =
+    tournament?.tournamentType === "solo"
+      ? "Solo"
+      : tournament?.tournamentType === "duo"
+        ? "Duo"
+        : "Squad";
+
+  const regStatus = normalizePaymentStatus(myReg?.paymentStatus);
+  const regPaymentId = myReg?.paymentId || null;
+  const regRegistered = Boolean(myReg?.registered);
+
+  const isPendingLike = regRegistered && (regStatus === "pending" || regStatus === "on_hold");
+  const isConfirmed = regRegistered && regStatus === "success";
 
   useEffect(() => {
     if (open && !user) {
@@ -75,84 +135,13 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
     }
   }, [open, user, router, tournament]);
 
-  // ✅ NEW: Check existing registration when modal opens + pre-fill teammate data
-  useEffect(() => {
-    async function checkExistingRegistration() {
-      if (!open || !tournament?._id || !user?.id) return;
-
-      setCheckingRegistration(true);
-      try {
-        const res = await api.getMyTournamentRegistration(tournament._id);
-        
-        if (res.success && res.data?.registered) {
-          setExistingRegistration(res.data);
-          
-          // ✅ If payment is done, show message and close
-          if (res.data.paymentStatus === "paid" || res.data.paymentStatus === "success") {
-            dispatch(showToast({ 
-              type: "info", 
-              title: "Already Registered", 
-              message: "You are already registered for this tournament" 
-            }));
-            onClose?.();
-            return;
-          }
-
-          // ✅ PRE-FILL TEAMMATE DATA from existing registration
-          if (res.data.teammates) {
-            if (tournament.tournamentType === "duo" && res.data.teammates.partnerInfo) {
-              setPartnerBgmiId(res.data.teammates.partnerInfo.bgmiId || "");
-              setPartnerInGameName(res.data.teammates.partnerInfo.inGameName || "");
-            } else if (tournament.tournamentType === "squad") {
-              if (res.data.teammates.teamName) {
-                setTeamName(res.data.teammates.teamName);
-              }
-              if (res.data.teammates.members && Array.isArray(res.data.teammates.members)) {
-                setMembers(res.data.teammates.members.map(m => ({
-                  bgmiId: m.bgmiId || "",
-                  inGameName: m.inGameName || ""
-                })));
-              }
-            }
-          }
-
-          // ✅ If payment is pending, open payment modal directly
-          if (res.data.paymentId && (res.data.paymentStatus === "pending" || res.data.paymentStatus === "on_hold")) {
-            dispatch(showToast({ 
-              type: "info", 
-              title: "Payment Pending", 
-              message: "Please complete your payment to confirm registration" 
-            }));
-            
-            // Close main modal and open payment modal
-            setTimeout(() => {
-              openManual(res.data.paymentId);
-              onClose?.();
-            }, 100);
-            return;
-          }
-        } else {
-          setExistingRegistration(null);
-        }
-      } catch (error) {
-        console.error("Error checking registration:", error);
-        setExistingRegistration(null);
-      } finally {
-        setCheckingRegistration(false);
-      }
-    }
-
-    checkExistingRegistration();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, tournament?._id, user?.id]);
-
-  useEffect(() => {
-    if (!open) resetForm();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  function openManual(paymentId) {
+    setManualPaymentId(paymentId);
+    setManualOpen(true);
+  }
 
   const initializeMembers = () => {
-    if (!tournament || !user) return;
+    if (!tournament) return;
 
     if (tournament.tournamentType === "squad") {
       const teamSize = tournament.teamSize || 4;
@@ -162,14 +151,6 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
       setMembers([]);
     }
   };
-
-  useEffect(() => {
-    if (tournament && user && !existingRegistration) {
-      // Only initialize empty members if no existing registration
-      initializeMembers();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tournament, user, existingRegistration]);
 
   const resetForm = () => {
     setActiveTab("details");
@@ -181,52 +162,91 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
     setFormErrors({});
     setManualOpen(false);
     setManualPaymentId(null);
-    setExistingRegistration(null);
-    if (tournament && user) initializeMembers();
+
+    setMyReg(null);
+    setCheckingReg(false);
+
+    if (tournament) initializeMembers();
   };
 
-  const payable = useMemo(() => couponInfo?.finalAmount ?? baseAmount, [couponInfo, baseAmount]);
-  const discount = safeNum(couponInfo?.discountAmount, 0);
-  const showCoupon = !tournament?.isFree;
+  useEffect(() => {
+    if (!open) resetForm();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
-  const getTournamentTypeText = () => {
-    if (!tournament) return "";
-    switch (tournament.tournamentType) {
-      case "solo":
-        return "Solo (You Only)";
-      case "duo":
-        return "Duo (You + 1 Partner)";
-      case "squad": {
-        const teamSize = tournament.teamSize || 4;
-        return `Squad (You + ${teamSize - 1} Teammates)`;
+  // ✅ Fetch my-registration whenever modal opens (fresh, so pending state is accurate)
+  useEffect(() => {
+    async function fetchMyRegistration() {
+      if (!open) return;
+      if (!user?.id) return;
+      if (!tournament?._id) return;
+
+      setCheckingReg(true);
+      try {
+        const res = await api.getMyTournamentRegistration(tournament._id);
+        const data = res?.data || null;
+        setMyReg(data);
+
+        // ✅ Prefill teammate data if already registered (so user doesn't re-enter)
+        if (data?.registered && data?.teammates) {
+          if (tournament.tournamentType === "squad") {
+            if (data.teammates.teamName) setTeamName(data.teammates.teamName);
+
+            const backendMembers = Array.isArray(data.teammates.members) ? data.teammates.members : [];
+            const teamSize = tournament.teamSize || 4;
+            const additionalMembers = Math.max(0, teamSize - 1);
+
+            const filled = [];
+            for (let i = 0; i < additionalMembers; i++) {
+              filled.push({
+                bgmiId: backendMembers[i]?.bgmiId || "",
+                inGameName: backendMembers[i]?.inGameName || ""
+              });
+            }
+            setMembers(filled);
+          }
+
+          if (tournament.tournamentType === "duo") {
+            const p = data?.teammates?.partnerInfo;
+            if (p?.bgmiId) setPartnerBgmiId(p.bgmiId);
+            if (p?.inGameName) setPartnerInGameName(p.inGameName);
+          }
+        } else {
+          // not registered => fresh empty init
+          initializeMembers();
+        }
+
+        // ✅ If already confirmed, close modal (no need to open payment again)
+        const st = normalizePaymentStatus(data?.paymentStatus);
+        if (data?.registered && st === "success") {
+          dispatch(
+            showToast({
+              type: "info",
+              title: "Already Registered",
+              message: "Your slot is confirmed."
+            })
+          );
+          onClose?.();
+        }
+      } catch (e) {
+        setMyReg(null);
+      } finally {
+        setCheckingReg(false);
       }
-      default:
-        return "";
     }
-  };
 
-  const getMembersInfoText = () => {
-    if (!tournament) return "";
-    switch (tournament.tournamentType) {
-      case "solo":
-        return "No teammates required - you'll play alone";
-      case "duo":
-        return "Add 1 partner's details";
-      case "squad": {
-        const teamSize = tournament.teamSize || 4;
-        return `Add ${teamSize - 1} teammates' details`;
-      }
-      default:
-        return "";
-    }
-  };
+    fetchMyRegistration();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, tournament?._id, user?.id]);
 
   const tabs = [
-    { key: "details", label: "Tournament Details", icon: <FiAward className="w-4 h-4" /> },
+    { key: "details", label: "Details", icon: <FiAward className="w-4 h-4" /> },
     (tournament?.tournamentType === "squad" || tournament?.tournamentType === "duo") && {
       key: "teammates",
-      label: tournament?.tournamentType === "duo" ? "Partner" : "Teammates",
-      icon: tournament?.tournamentType === "duo" ? <BsFillPeopleFill className="w-4 h-4" /> : <GiTeamIdea className="w-4 h-4" />
+      label: tournament?.tournamentType === "duo" ? "Partner" : "Team",
+      icon: tournament?.tournamentType === "duo"
+        ? <BsFillPeopleFill className="w-4 h-4" />
+        : <GiTeamIdea className="w-4 h-4" />
     },
     { key: "payment", label: "Payment", icon: <FiCreditCard className="w-4 h-4" /> }
   ].filter(Boolean);
@@ -234,9 +254,16 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
   const validateForm = () => {
     const errors = {};
 
+    if (!user?.bgmiId || !user?.inGameName) {
+      errors.profile = "Please complete your profile (BGMI ID + In‑Game Name) before registering.";
+    }
+
+    // If already registered & pending, DON'T force re-validation (we will show prefilled locked UI)
+    if (regRegistered) return errors;
+
     if (tournament?.tournamentType === "duo") {
       if (!partnerBgmiId.trim()) errors.partnerBgmiId = "Partner BGMI ID is required";
-      if (!partnerInGameName.trim()) errors.partnerInGameName = "Partner In-Game Name is required";
+      if (!partnerInGameName.trim()) errors.partnerInGameName = "Partner In‑Game Name is required";
     }
 
     if (tournament?.tournamentType === "squad") {
@@ -246,17 +273,8 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
       });
     }
 
-    if (!user?.bgmiId || !user?.inGameName) {
-      errors.profile = "Please complete your profile (BGMI ID + In-Game Name) before registering.";
-    }
-
     return errors;
   };
-
-  function openManual(paymentId) {
-    setManualPaymentId(paymentId);
-    setManualOpen(true);
-  }
 
   async function applyCoupon() {
     if (!couponCode.trim()) return;
@@ -271,387 +289,468 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
 
       if (res.success) {
         setCouponInfo(res.data);
-        dispatch(showToast({ type: "success", title: "Coupon Applied", message: `₹${safeNum(res.data.discountAmount, 0)} discount applied` }));
+        dispatch(
+          showToast({
+            type: "success",
+            title: "Coupon Applied",
+            message: `₹${safeNum(res.data.discountAmount, 0)} discount applied`
+          })
+        );
       } else {
         dispatch(showToast({ type: "error", title: "Coupon Error", message: res?.message || "Failed to apply coupon" }));
       }
     } catch (error) {
-      dispatch(showToast({ type: "error", title: "Invalid Coupon", message: error?.message || "Please enter a valid coupon code" }));
-      setCouponInfo(null);
+      dispatch(showToast({ type: "error", title: "Invalid Coupon", message: error?.message || "Invalid coupon" }));
     } finally {
       setVerifyingCoupon(false);
     }
   }
 
-  async function registerNow() {
-    if (!isRegistrationOpen) {
-      dispatch(showToast({ type: "error", title: "Registration Closed", message: "Registration is not open for this tournament" }));
+  function canContinueToPayment() {
+    if (!isRegistrationOpen && !regRegistered) return false;
+    if (!user?.bgmiId || !user?.inGameName) return false;
+
+    // If already registered, allow continue (so user can go to payment tab and pay)
+    if (regRegistered) return true;
+
+    if (tournament?.tournamentType === "duo") {
+      return Boolean(partnerBgmiId.trim() && partnerInGameName.trim());
+    }
+    if (tournament?.tournamentType === "squad") {
+      return members.every((m) => m.bgmiId.trim() && m.inGameName.trim());
+    }
+    return true;
+  }
+
+  async function handleProceedOrPayNow() {
+    // ✅ If already registered & pending/on_hold => just open manual modal (no re-register, no re-enter)
+    if (isPendingLike && regPaymentId) {
+      openManual(regPaymentId);
       return;
     }
 
+    // ✅ If registered and failed => allow retry by opening manual modal if paymentId exists
+    if (regRegistered && regStatus === "failed" && regPaymentId) {
+      openManual(regPaymentId);
+      return;
+    }
+
+    // ✅ Not registered => do register
+    await handleRegister();
+  }
+
+  async function handleRegister() {
+    if (!tournament?._id) return;
+
     const errors = validateForm();
+    setFormErrors(errors);
+
     if (Object.keys(errors).length > 0) {
-      setFormErrors(errors);
-      dispatch(showToast({ type: "error", title: "Validation Error", message: errors.profile || "Please fill all required fields" }));
+      dispatch(showToast({ type: "error", title: "Fix Errors", message: errors.profile || "Please fix the highlighted fields" }));
+      return;
+    }
+
+    if (!isRegistrationOpen) {
+      dispatch(showToast({ type: "error", title: "Registration Closed", message: "Registration is currently closed" }));
       return;
     }
 
     setLoading(true);
     try {
-      const payloadBase = { couponCode: couponCode?.trim() || undefined };
-      let res;
+      let payload = {};
+      if (!tournament?.isFree) payload.couponCode = couponCode.trim() || undefined;
+
+      if (tournament.tournamentType === "duo") {
+        payload.partnerBgmiId = partnerBgmiId.trim();
+        payload.partnerInGameName = partnerInGameName.trim();
+      }
 
       if (tournament.tournamentType === "squad") {
-        const cleanedMembers = members.map((m) => ({
-          bgmiId: m.bgmiId.trim(),
-          inGameName: m.inGameName.trim()
-        }));
-
-        res = await api.registerSquad(tournament._id, {
-          ...payloadBase,
-          teamName: teamName?.trim() || undefined,
-          members: cleanedMembers
-        });
-      } else if (tournament.tournamentType === "duo") {
-        res = await api.registerSoloDuo(tournament._id, {
-          ...payloadBase,
-          partnerBgmiId: partnerBgmiId.trim(),
-          partnerInGameName: partnerInGameName.trim()
-        });
-      } else {
-        res = await api.registerSoloDuo(tournament._id, payloadBase);
+        payload.teamName = teamName.trim() || undefined;
+        payload.members = members.map((m) => ({ bgmiId: m.bgmiId.trim(), inGameName: m.inGameName.trim() }));
       }
 
-      if (!res?.success) {
-        dispatch(showToast({ type: "error", title: "Registration Failed", message: res?.message || "Please try again" }));
-        return;
-      }
+      const res =
+        tournament.tournamentType === "squad"
+          ? await api.registerSquad(tournament._id, payload)
+          : await api.registerSoloDuo(tournament._id, payload);
 
-      // ✅ Close main modal first
-      onClose?.();
+      dispatch(showToast({ type: "success", title: "Registered", message: res?.message || "Registered successfully" }));
 
-      // ✅ Free registration - NO PAYMENT MODAL
-      if (payable === 0 || res?.payableAmount === 0) {
-        router.refresh();
-        dispatch(showToast({ type: "success", title: "Registered Successfully", message: "You have been registered for the tournament" }));
-        return;
-      }
+      const paymentId = res?.payment?.id || null;
+      const paymentStatus = normalizePaymentStatus(res?.payment?.paymentStatus);
 
-      // ✅ Open manual payment popup immediately for paid tournaments
-      const paymentId = res?.payment?.id || res?.payment?.paymentId || res?.data?.paymentId;
-      if (paymentId) {
-        dispatch(showToast({ type: "success", title: "Registration Done", message: "Pay via UPI and submit UTR for verification." }));
-        setTimeout(() => openManual(paymentId), 200);
-        return;
-      }
+      // ✅ If payment required => open manual popup immediately
+      if (paymentId && (paymentStatus === "pending" || paymentStatus === "on_hold")) {
+        openManual(paymentId);
 
-      dispatch(showToast({ type: "error", title: "Payment Error", message: "Payment ID not found. Please contact support." }));
-    } catch (error) {
-      const msg = String(error?.message || "");
-
-      if (msg.toLowerCase().includes("already registered") || msg.toLowerCase().includes("already")) {
-        // User already registered - check for pending payment
+        // refresh myRegistration state so modal shows pending if user closes manual
         try {
-          const regRes = await api.getMyTournamentRegistration(tournament._id);
-          if (regRes.success && regRes.data?.paymentId) {
-            onClose?.();
-            setTimeout(() => {
-              openManual(regRes.data.paymentId);
-              dispatch(showToast({ type: "info", title: "Already registered", message: "Payment pending. Please submit UTR to complete." }));
-            }, 200);
-            return;
-          }
-        } catch {
-          // ignore
-        }
+          const fresh = await api.getMyTournamentRegistration(tournament._id);
+          setMyReg(fresh?.data || null);
+        } catch {}
+
+        return;
       }
 
-      dispatch(showToast({ type: "error", title: "Registration Failed", message: error?.message || "Please try again" }));
+      // ✅ Free / ₹0 => close
+      onClose?.();
+      router.refresh?.();
+    } catch (error) {
+      dispatch(showToast({ type: "error", title: "Failed", message: error?.message || "Registration failed" }));
     } finally {
       setLoading(false);
     }
   }
 
-  if (!tournament || !user) return null;
+  const paymentBanner = useMemo(() => {
+    if (!regRegistered) return null;
 
-  // ✅ Show loading while checking registration
-  if (checkingRegistration) {
-    return (
-      <Modal open={open} onClose={onClose} title="Join Tournament" size="lg">
-        <div className="flex items-center justify-center py-20">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        </div>
-      </Modal>
-    );
+    if (regStatus === "pending") {
+      return {
+        tone: "blue",
+        title: "Payment Pending",
+        msg: "Your slot is booked. Please pay via UPI and submit UTR to confirm.",
+        cta: "Pay Now / Submit UTR"
+      };
+    }
+
+    if (regStatus === "on_hold") {
+      return {
+        tone: "amber",
+        title: "Under Review",
+        msg: "Your UTR has been submitted. Admin will verify your payment soon.",
+        cta: "View / Re-submit UTR"
+      };
+    }
+
+    if (regStatus === "failed") {
+      return {
+        tone: "red",
+        title: "Payment Failed / Rejected",
+        msg: "Your payment was rejected. You can try again.",
+        cta: "Try Again"
+      };
+    }
+
+    if (regStatus === "success") {
+      return {
+        tone: "green",
+        title: "Registration Confirmed",
+        msg: "Your slot is confirmed.",
+        cta: null
+      };
+    }
+
+    return null;
+  }, [regRegistered, regStatus]);
+
+  function bannerClass(tone) {
+    if (tone === "blue") return "border-blue-200 bg-blue-50 text-blue-900";
+    if (tone === "amber") return "border-amber-200 bg-amber-50 text-amber-900";
+    if (tone === "red") return "border-red-200 bg-red-50 text-red-900";
+    if (tone === "green") return "border-emerald-200 bg-emerald-50 text-emerald-900";
+    return "border-slate-200 bg-slate-50 text-slate-900";
   }
 
   return (
     <>
-      <Modal open={open} onClose={onClose} title="Join Tournament" size="lg">
-        <div className="space-y-5 sm:space-y-6">
-          {/* Tournament Info Card */}
-          <div className="bg-gradient-to-r from-blue-50 to-blue-50 border border-blue-200 rounded-lg sm:rounded-xl p-4 sm:p-5">
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+      <Modal open={open} onClose={onClose} title="Join Tournament" maxWidth="max-w-4xl">
+        <div className="space-y-5">
+          {/* Header Card */}
+          <div className="rounded-2xl border border-slate-200 bg-gradient-to-r from-blue-50 via-indigo-50 to-white p-4 sm:p-5">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex-1">
-                <h3 className="font-bold text-gray-900 text-base sm:text-lg">{tournament.title}</h3>
-
-                <div className="flex flex-wrap items-center gap-2 mt-2">
-                  <span className="inline-flex items-center gap-1 text-xs sm:text-sm font-semibold text-blue-700 bg-blue-100 px-2.5 py-1 rounded-full">
-                    {tournament.tournamentType === "solo" ? (
-                      <FiUsers className="w-3.5 h-3.5" />
-                    ) : tournament.tournamentType === "duo" ? (
-                      <BsFillPeopleFill className="w-3.5 h-3.5" />
-                    ) : (
-                      <GiTeamIdea className="w-3.5 h-3.5" />
-                    )}
-                    {getTournamentTypeText()}
-                  </span>
-
-                  <span className="text-xs sm:text-sm text-gray-600">
-                    {tournament.isFree ? "Free Entry" : `Entry Fee: ₹${baseAmount}`}
-                  </span>
+                <div className="flex items-center gap-2">
+                  <div className="h-10 w-10 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 flex items-center justify-center text-white">
+                    <FiAward className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="text-sm text-slate-500">Tournament</div>
+                    <div className="text-lg sm:text-xl font-black text-slate-900">{title}</div>
+                  </div>
                 </div>
 
-                <div className="text-xs sm:text-sm text-gray-500 mt-2">{getMembersInfoText()}</div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <StatChip icon={<FiShield className="w-4 h-4" />} label="Type" value={typeLabel} tone="slate" />
+                  <StatChip
+                    icon={<FiUsers className="w-4 h-4" />}
+                    label="Spots"
+                    value={`${safeNum(tournament?.currentParticipants, 0)} / ${safeNum(tournament?.maxParticipants, 0)}`}
+                    tone="blue"
+                  />
+                  <StatChip
+                    icon={<FiDollarSign className="w-4 h-4" />}
+                    label="Entry"
+                    value={tournament?.isFree ? "FREE" : `₹${baseAmount}`}
+                    tone={tournament?.isFree ? "green" : "amber"}
+                  />
+                </div>
 
-                {!isRegistrationOpen && (
-                  <div className="mt-3 text-xs sm:text-sm text-red-600 font-semibold">
-                    Registration is currently closed for this tournament.
+                {!isRegistrationOpen && !regRegistered && (
+                  <div className="mt-4 p-3 rounded-xl border border-red-200 bg-red-50 text-red-800 text-sm flex gap-2">
+                    <FiXCircle className="w-5 h-5 mt-0.5" />
+                    <div className="font-semibold">Registration is currently closed for this tournament.</div>
+                  </div>
+                )}
+
+                {formErrors.profile && (
+                  <div className="mt-4 p-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 text-sm flex gap-2">
+                    <FiInfo className="w-5 h-5 mt-0.5" />
+                    <div>
+                      <div className="font-bold">Profile incomplete</div>
+                      <div className="text-amber-800">{formErrors.profile}</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ✅ Payment pending banner */}
+                {paymentBanner && (
+                  <div className={`mt-4 p-3 rounded-xl border text-sm flex items-start gap-2 ${bannerClass(paymentBanner.tone)}`}>
+                    <FiInfo className="w-5 h-5 mt-0.5" />
+                    <div className="flex-1">
+                      <div className="font-black">{paymentBanner.title}</div>
+                      <div className="opacity-90">{paymentBanner.msg}</div>
+
+                      {paymentBanner.cta && regPaymentId && (
+                        <div className="mt-2">
+                          <Button type="button" onClick={() => openManual(regPaymentId)}>
+                            {paymentBanner.cta}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
 
-              <div className="text-right">
-                <div className="text-xl sm:text-2xl font-extrabold text-blue-700">
-                  ₹{safeNum(tournament.prizePool, 0).toLocaleString("en-IN")}
+              {/* Payable card */}
+              <div className="sm:w-72 rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="text-xs text-slate-500">Payable</div>
+                <div className="text-3xl font-black text-slate-900">
+                  ₹{safeNum(isPendingLike && myReg?.paymentStatus ? (myReg?.amount ?? payable) : payable, 0)}
                 </div>
-                <div className="text-xs text-gray-600">Prize Pool</div>
+
+                {discount > 0 ? (
+                  <div className="mt-2 text-sm text-emerald-700 flex items-center gap-2">
+                    <FiCheckCircle className="w-4 h-4" />
+                    Discount applied: ₹{discount}
+                  </div>
+                ) : (
+                  <div className="mt-2 text-sm text-slate-500">
+                    {tournament?.isFree ? "No payment required" : "Apply coupon to reduce amount"}
+                  </div>
+                )}
+
+                <div className="mt-3 text-[11px] text-slate-500">
+                  Manual UPI payments are verified by admin.
+                </div>
               </div>
             </div>
           </div>
 
           {/* Tabs */}
-          <div className="border-b border-slate-200">
-            <div className="flex space-x-1 overflow-x-auto">
-              {tabs.map((tab) => (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => setActiveTab(tab.key)}
-                  className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors ${
-                    activeTab === tab.key
-                      ? "text-blue-600 border-b-2 border-blue-600"
-                      : "text-slate-600 hover:text-blue-500"
-                  }`}
-                >
-                  {tab.icon}
-                  {tab.label}
-                </button>
-              ))}
-            </div>
+          <div className="flex flex-wrap gap-2">
+            {tabs.map((t) => (
+              <TabPill
+                key={t.key}
+                active={activeTab === t.key}
+                onClick={() => setActiveTab(t.key)}
+                icon={t.icon}
+                label={t.label}
+              />
+            ))}
           </div>
 
+          {/* Loading registration */}
+          {checkingReg ? (
+            <div className="p-4 rounded-xl border border-slate-200 bg-white text-slate-700 text-sm">
+              Checking your registration status...
+            </div>
+          ) : null}
+
           {/* Content */}
-          <div className="space-y-6">
+          <div className="space-y-5">
+            {/* DETAILS */}
             {activeTab === "details" && (
-              <>
-                {formErrors.profile && (
-                  <div className="p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-sm">
-                    {formErrors.profile}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex items-center gap-2 font-black text-slate-900">
+                    <FiInfo className="w-4 h-4 text-blue-600" />
+                    Summary
                   </div>
-                )}
 
-                {showCoupon && (
-                  <div className="border border-slate-200 rounded-xl p-4">
-                    <h4 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-                      <FiTag className="w-4 h-4" />
-                      Apply Coupon
-                    </h4>
-
-                    <div className="flex flex-col sm:flex-row gap-3">
-                      <div className="flex-1">
-                        <Input
-                          value={couponCode}
-                          onChange={(e) => setCouponCode(e.target.value)}
-                          placeholder="Enter coupon code"
-                          icon={<FiTag className="w-4 h-4" />}
-                        />
-                      </div>
-
-                      <Button
-                        variant="outline"
-                        onClick={applyCoupon}
-                        disabled={!couponCode || verifyingCoupon}
-                        loading={verifyingCoupon}
-                        className="sm:w-auto"
-                        type="button"
-                      >
-                        Apply
-                      </Button>
+                  <div className="mt-3 text-sm text-slate-700 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600">Tournament Type</span>
+                      <span className="font-bold">{typeLabel}</span>
                     </div>
-
-                    {couponInfo && (
-                      <div className="mt-3 p-3 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2 text-green-700">
-                            <FiCheckCircle className="w-5 h-5" />
-                            <div>
-                              <div className="font-medium">Coupon Applied!</div>
-                              <div className="text-xs text-green-600">Discount: ₹{safeNum(couponInfo.discountAmount, 0)}</div>
-                            </div>
-                          </div>
-
-                          <div className="text-right">
-                            <div className="text-sm text-green-600 line-through">₹{baseAmount}</div>
-                            <div className="text-xl font-bold text-green-700">
-                              ₹{safeNum(couponInfo.finalAmount, baseAmount)}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600">Entry Fee</span>
+                      <span className="font-bold">{tournament?.isFree ? "FREE" : `₹${baseAmount}`}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600">Payable (after coupon)</span>
+                      <span className="font-extrabold text-blue-600">₹{safeNum(payable, 0)}</span>
+                    </div>
                   </div>
-                )}
-              </>
-            )}
 
-            {/* TEAMMATES */}
-            {activeTab === "teammates" && (tournament.tournamentType === "duo" || tournament.tournamentType === "squad") && (
-              <div className="space-y-6">
-                {/* Captain info */}
-                <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="h-10 w-10 rounded-lg bg-gradient-to-r from-green-500 to-emerald-500 flex items-center justify-center">
-                      <FiUsers className="w-5 h-5 text-white" />
-                    </div>
-
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h4 className="font-semibold text-slate-800">Your Details (Captain)</h4>
-                          <p className="text-sm text-slate-600 mt-1">
-                            Your information is automatically added as captain.
-                          </p>
-                        </div>
-                        <div className="bg-green-100 text-green-800 text-xs font-medium px-2 py-1 rounded">
-                          AUTO-FILLED
-                        </div>
-                      </div>
-
-                      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div className="bg-white p-3 rounded-lg border border-green-100">
-                          <div className="text-xs text-slate-500 mb-1">Your BGMI ID</div>
-                          <div className="font-medium text-slate-800 flex items-center gap-2">
-                            {user.bgmiId || "Not set"}
-                            {user.bgmiId && <FiCheckCircle className="w-4 h-4 text-green-500" />}
-                          </div>
-                        </div>
-                        <div className="bg-white p-3 rounded-lg border border-green-100">
-                          <div className="text-xs text-slate-500 mb-1">Your In-Game Name</div>
-                          <div className="font-medium text-slate-800 flex items-center gap-2">
-                            {user.inGameName || "Not set"}
-                            {user.inGameName && <FiCheckCircle className="w-4 h-4 text-green-500" />}
-                          </div>
-                        </div>
+                  <div className="mt-4 p-3 rounded-xl border border-blue-200 bg-blue-50 text-blue-900 text-sm flex gap-2">
+                    <FiShield className="w-5 h-5 mt-0.5" />
+                    <div>
+                      <div className="font-bold">How it works</div>
+                      <div className="text-blue-800">
+                        Register → Pay via UPI → Submit UTR → Admin verifies → Slot confirmed.
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Team name */}
-                {tournament.tournamentType === "squad" && (
-                  <Input
-                    label="Team Name (Optional)"
-                    value={teamName}
-                    onChange={(e) => setTeamName(e.target.value)}
-                    placeholder="Enter your team name (e.g., RBM Warriors)"
-                  />
-                )}
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex items-center gap-2 font-black text-slate-900">
+                    <FiUser className="w-4 h-4 text-indigo-600" />
+                    Your Auto Details
+                  </div>
 
-                {/* Duo */}
-                {tournament.tournamentType === "duo" && (
-                  <div className="border border-slate-200 rounded-xl p-4 hover:border-amber-300 transition-colors">
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="h-8 w-8 rounded-lg bg-gradient-to-r from-amber-100 to-orange-100 flex items-center justify-center">
-                        <span className="font-bold text-amber-700">P</span>
-                      </div>
-                      <div>
-                        <span className="font-medium text-slate-800">Partner</span>
-                        <div className="text-xs text-slate-500">Your duo partner</div>
-                      </div>
+                  <div className="mt-3 space-y-3">
+                    <div className="p-3 rounded-xl border border-slate-200 bg-slate-50">
+                      <div className="text-xs text-slate-500">BGMI ID</div>
+                      <div className="font-mono text-sm font-bold text-slate-900">{user?.bgmiId || "—"}</div>
                     </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <Input
-                        label="Partner BGMI ID"
-                        value={partnerBgmiId}
-                        onChange={(e) => setPartnerBgmiId(e.target.value)}
-                        placeholder="Enter partner's BGMI ID"
-                        error={formErrors.partnerBgmiId}
-                        required
-                      />
-                      <Input
-                        label="Partner In-Game Name"
-                        value={partnerInGameName}
-                        onChange={(e) => setPartnerInGameName(e.target.value)}
-                        placeholder="Enter partner's in-game name"
-                        error={formErrors.partnerInGameName}
-                        required
-                      />
+                    <div className="p-3 rounded-xl border border-slate-200 bg-slate-50">
+                      <div className="text-xs text-slate-500">In‑Game Name</div>
+                      <div className="text-sm font-bold text-slate-900">{user?.inGameName || "—"}</div>
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      These are auto-filled as Captain (You).
                     </div>
                   </div>
-                )}
+                </div>
+              </div>
+            )}
 
-                {/* Squad */}
-                {tournament.tournamentType === "squad" &&
-                  members.map((member, index) => (
-                    <div key={index} className="border border-slate-200 rounded-xl p-4 hover:border-blue-300 transition-colors">
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className="h-8 w-8 rounded-lg bg-gradient-to-r from-blue-100 to-cyan-100 flex items-center justify-center">
-                          <span className="font-bold text-blue-600">{index + 1}</span>
-                        </div>
-                        <div>
-                          <span className="font-medium text-slate-800">Teammate {index + 1}</span>
-                          <div className="text-xs text-slate-500">Required</div>
-                        </div>
+            {/* TEAM / PARTNER */}
+            {activeTab === "teammates" && tournament?.tournamentType === "duo" && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 font-black text-slate-900">
+                    <BsFillPeopleFill className="w-4 h-4 text-blue-600" />
+                    Partner Details
+                  </div>
+                  <div className="text-xs text-slate-500">{regRegistered ? "Locked (already registered)" : "Required"}</div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <Input
+                    label="Partner BGMI ID"
+                    value={partnerBgmiId}
+                    onChange={(e) => setPartnerBgmiId(e.target.value)}
+                    error={formErrors.partnerBgmiId}
+                    placeholder="Enter partner BGMI ID"
+                    disabled={regRegistered}
+                  />
+                  <Input
+                    label="Partner In‑Game Name"
+                    value={partnerInGameName}
+                    onChange={(e) => setPartnerInGameName(e.target.value)}
+                    error={formErrors.partnerInGameName}
+                    placeholder="Enter partner IGN"
+                    disabled={regRegistered}
+                  />
+                </div>
+              </div>
+            )}
+
+            {activeTab === "teammates" && tournament?.tournamentType === "squad" && (
+              <div className="space-y-4">
+                {/* Captain card (auto) */}
+                <div className="rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-white p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-xl bg-gradient-to-r from-emerald-600 to-green-600 flex items-center justify-center text-white">
+                        <FiUsers className="w-5 h-5" />
                       </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <Input
-                          label="BGMI ID"
-                          value={member.bgmiId}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setMembers((prev) => prev.map((x, i) => (i === index ? { ...x, bgmiId: v } : x)));
-                          }}
-                          placeholder="Enter teammate's BGMI ID"
-                          error={formErrors[`member${index}BgmiId`]}
-                          required
-                        />
-                        <Input
-                          label="In-Game Name"
-                          value={member.inGameName}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setMembers((prev) => prev.map((x, i) => (i === index ? { ...x, inGameName: v } : x)));
-                          }}
-                          placeholder="Enter teammate's in-game name"
-                          error={formErrors[`member${index}InGameName`]}
-                          required
-                        />
+                      <div>
+                        <div className="font-black text-slate-900">Captain (You)</div>
+                        <div className="text-xs text-slate-600">Auto-filled from your profile</div>
                       </div>
                     </div>
-                  ))}
+                    <div className="text-[11px] px-2 py-1 rounded-lg bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
+                      AUTO
+                    </div>
+                  </div>
 
-                <div className="flex items-start gap-2 text-sm text-slate-600 p-3 bg-slate-50 rounded-lg">
-                  <FiInfo className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <div className="font-medium text-slate-700 mb-1">Important:</div>
-                    <ul className="space-y-1 text-slate-600">
-                      <li>• Details must be correct (changes not allowed later)</li>
-                      <li>• All BGMI IDs must be unique</li>
-                      <li>• You are registered as captain automatically</li>
-                    </ul>
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="p-3 rounded-xl border border-emerald-200 bg-white">
+                      <div className="text-xs text-slate-500">BGMI ID</div>
+                      <div className="font-mono font-black text-slate-900">{user?.bgmiId || "—"}</div>
+                    </div>
+                    <div className="p-3 rounded-xl border border-emerald-200 bg-white">
+                      <div className="text-xs text-slate-500">In‑Game Name</div>
+                      <div className="font-black text-slate-900">{user?.inGameName || "—"}</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Team name */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex items-center gap-2 font-black text-slate-900">
+                    <GiTeamIdea className="w-4 h-4 text-indigo-600" />
+                    Team Info
+                  </div>
+                  <div className="mt-3">
+                    <Input
+                      label="Team Name (optional)"
+                      value={teamName}
+                      onChange={(e) => setTeamName(e.target.value)}
+                      placeholder="e.g., RBM Warriors"
+                      disabled={regRegistered}
+                    />
+                  </div>
+                </div>
+
+                {/* Other teammates */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="font-black text-slate-900">Teammates</div>
+                    <div className="text-xs text-slate-500">{regRegistered ? "Locked (already registered)" : "Required"}</div>
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    {members.map((m, idx) => (
+                      <div key={idx} className="p-4 rounded-2xl border border-slate-200 bg-slate-50">
+                        <div className="flex items-center justify-between">
+                          <div className="font-bold text-slate-800">Teammate {idx + 1}</div>
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <Input
+                            label="BGMI ID"
+                            value={m.bgmiId}
+                            onChange={(e) => {
+                              const next = [...members];
+                              next[idx] = { ...next[idx], bgmiId: e.target.value };
+                              setMembers(next);
+                            }}
+                            error={formErrors[`member${idx}BgmiId`]}
+                            placeholder="Enter BGMI ID"
+                            disabled={regRegistered}
+                          />
+                          <Input
+                            label="In‑Game Name"
+                            value={m.inGameName}
+                            onChange={(e) => {
+                              const next = [...members];
+                              next[idx] = { ...next[idx], inGameName: e.target.value };
+                              setMembers(next);
+                            }}
+                            error={formErrors[`member${idx}InGameName`]}
+                            placeholder="Enter IGN"
+                            disabled={regRegistered}
+                          />
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -659,152 +758,144 @@ export default function JoinTournamentModal({ open, onClose, tournament }) {
 
             {/* PAYMENT */}
             {activeTab === "payment" && (
-              <div className="space-y-6">
-                <div className="border border-slate-200 rounded-xl p-6">
-                  <div className="flex items-center justify-between mb-6">
-                    <h4 className="font-semibold text-slate-800 flex items-center gap-2">
-                      <FiCreditCard className="w-5 h-5" />
-                      Payment Summary
-                    </h4>
-                    <div className="flex items-center gap-2 text-green-600">
-                      <FiShield className="w-4 h-4" />
-                      <span className="text-sm font-medium">Secure</span>
-                    </div>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {/* Coupon */}
+                <div className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex items-center gap-2 font-black text-slate-900">
+                    <FiTag className="w-4 h-4 text-blue-600" />
+                    Coupon
                   </div>
 
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
-                      <div className="text-slate-700">Entry Fee</div>
-                      <div className="font-medium">₹{baseAmount}</div>
-                    </div>
-
-                    {discount > 0 && (
-                      <div className="flex justify-between items-center p-3 bg-green-50 rounded-lg">
-                        <div className="text-green-700">Discount</div>
-                        <div className="font-medium text-green-600">-₹{discount}</div>
-                      </div>
-                    )}
-
-                    <div className="h-px bg-slate-200"></div>
-
-                    <div className="flex justify-between items-center p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg">
-                      <div className="text-lg font-bold text-slate-800">Total Payable</div>
-                      <div className="text-2xl font-bold text-blue-600">₹{payable}</div>
-                    </div>
-                  </div>
-
-                  {payable === 0 ? (
-                    <div className="mt-6 p-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <FiCheckCircle className="w-8 h-8 text-green-600" />
-                        <div>
-                          <div className="font-bold text-green-800">Free / ₹0 Payable</div>
-                          <div className="text-sm text-green-700 mt-1">No payment required. Confirm registration to join.</div>
-                        </div>
-                      </div>
-                    </div>
+                  {!showCoupon ? (
+                    <div className="mt-3 text-sm text-slate-600">This tournament is free. No coupon needed.</div>
                   ) : (
-                    <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <FiInfo className="w-8 h-8 text-blue-600" />
-                        <div>
-                          <div className="font-bold text-blue-800">Manual UPI Payment</div>
-                          <div className="text-sm text-blue-700 mt-1">
-                            Proceed will open UPI + UTR submit popup (no redirect).
+                    <>
+                      <div className="mt-3 flex flex-col sm:flex-row gap-2">
+                        <div className="flex-1">
+                          <Input
+                            value={couponCode}
+                            onChange={(e) => setCouponCode(e.target.value)}
+                            placeholder="Enter coupon code"
+                            disabled={regRegistered} // lock if already registered
+                          />
+                        </div>
+                        <Button type="button" onClick={applyCoupon} disabled={regRegistered || verifyingCoupon || !couponCode.trim()}>
+                          {verifyingCoupon ? "Applying..." : "Apply"}
+                        </Button>
+                      </div>
+
+                      {couponInfo ? (
+                        <div className="mt-3 p-3 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-900 text-sm flex gap-2">
+                          <FiCheckCircle className="w-5 h-5 mt-0.5" />
+                          <div>
+                            <div className="font-bold">Coupon applied</div>
+                            <div className="text-emerald-800">
+                              Discount: ₹{safeNum(couponInfo.discountAmount, 0)} | Final: ₹{safeNum(couponInfo.finalAmount, 0)}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </div>
+                      ) : null}
+                    </>
                   )}
+                </div>
+
+                {/* Amount summary */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex items-center gap-2 font-black text-slate-900">
+                    <FiCreditCard className="w-4 h-4 text-indigo-600" />
+                    Payment Summary
+                  </div>
+
+                  <div className="mt-4 space-y-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600">Base</span>
+                      <span className="font-bold">₹{baseAmount}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600">Discount</span>
+                      <span className={`font-bold ${discount > 0 ? "text-emerald-700" : ""}`}>-₹{discount}</span>
+                    </div>
+                    <div className="h-px bg-slate-200 my-2" />
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-700 font-black">Payable</span>
+                      <span className="text-blue-600 font-black text-xl">₹{safeNum(payable, 0)}</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 p-3 rounded-xl border border-blue-200 bg-blue-50 text-blue-900 text-sm flex gap-2">
+                    <FiInfo className="w-5 h-5 mt-0.5" />
+                    <div>
+                      <div className="font-bold">Manual UPI</div>
+                      <div className="text-blue-800">Proceed will open UPI + UTR submit popup.</div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Sticky actions */}
-          <div className="sticky bottom-0 bg-white pt-4 border-t border-slate-200 -mx-6 -mb-6 px-6 pb-6">
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div className="text-sm text-slate-600">
-                {payable === 0 ? (
-                  <div className="flex items-center gap-2">
-                    <FiCheckCircle className="w-4 h-4 text-green-500" />
-                    <span className="font-medium text-green-600">No payment required</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <FiDollarSign className="w-4 h-4 text-blue-500" />
-                    <span>
-                      Total: <span className="font-bold text-blue-600">₹{payable}</span>
-                    </span>
-                  </div>
-                )}
+          {/* Footer actions */}
+          <div className="sticky bottom-0 bg-white pt-4 border-t border-slate-200">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="text-sm text-slate-600 flex items-center gap-2">
+                <FiDollarSign className="w-4 h-4 text-blue-600" />
+                <span>
+                  Total: <span className="font-black text-slate-900">₹{safeNum(payable, 0)}</span>
+                </span>
               </div>
 
-              <div className="flex gap-3 w-full sm:w-auto">
-                {activeTab !== "details" ? (
-                  <Button
-                    variant="outline"
-                    type="button"
-                    onClick={() => {
-                      const tabIndex = tabs.findIndex((t) => t.key === activeTab);
-                      if (tabIndex > 0) setActiveTab(tabs[tabIndex - 1].key);
-                    }}
-                    className="flex-1 sm:flex-none"
-                  >
-                    Back
-                  </Button>
-                ) : (
-                  <Button variant="outline" type="button" onClick={onClose} className="flex-1 sm:flex-none">
-                    Cancel
-                  </Button>
-                )}
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={onClose}>
+                  Close
+                </Button>
 
                 {activeTab !== "payment" ? (
                   <Button
                     type="button"
                     onClick={() => {
-                      const tabIndex = tabs.findIndex((t) => t.key === activeTab);
-                      if (tabIndex < tabs.length - 1) setActiveTab(tabs[tabIndex + 1].key);
+                      const idx = tabs.findIndex((x) => x.key === activeTab);
+                      const next = tabs[idx + 1]?.key;
+                      if (next) setActiveTab(next);
                     }}
-                    className="flex-1 sm:flex-none"
-                    disabled={
-                      !isRegistrationOpen ||
-                      Boolean(formErrors.profile) ||
-                      (tournament.tournamentType === "duo" && (!partnerBgmiId.trim() || !partnerInGameName.trim())) ||
-                      (tournament.tournamentType === "squad" && members.some((m) => !m.bgmiId.trim() || !m.inGameName.trim()))
-                    }
+                    disabled={!canContinueToPayment()}
                   >
-                    Continue
+                    Continue <FiArrowRight className="w-4 h-4 ml-1" />
                   </Button>
                 ) : (
                   <Button
                     type="button"
-                    onClick={registerNow}
+                    onClick={handleProceedOrPayNow}
+                    disabled={loading || (!isRegistrationOpen && !regRegistered) || checkingReg}
                     loading={loading}
-                    disabled={!isRegistrationOpen}
-                    className="flex-1 sm:flex-none bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 shadow-lg hover:shadow-xl"
+                    className="bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700"
                   >
-                    {payable === 0 ? "Confirm Registration" : "Proceed"}
+                    {regRegistered
+                      ? (regStatus === "on_hold" ? "View / Update UTR" : "Pay Now / Submit UTR")
+                      : (payable === 0 ? "Confirm Registration" : "Proceed & Pay")}
                   </Button>
                 )}
               </div>
             </div>
           </div>
-
-          <button className="hidden" type="button">
-            <FiXCircle />
-          </button>
         </div>
       </Modal>
 
-      {/* ✅ Manual Payment Popup - Opens OUTSIDE main modal */}
+      {/* Manual Payment Modal */}
       <ManualPaymentModal
         open={manualOpen}
-        onClose={() => {
+        paymentId={manualPaymentId}
+        onClose={async () => {
           setManualOpen(false);
           setManualPaymentId(null);
+
+          // ✅ After closing manual modal, refresh reg state so UI shows pending/under review correctly
+          if (user?.id && tournament?._id) {
+            try {
+              const fresh = await api.getMyTournamentRegistration(tournament._id);
+              setMyReg(fresh?.data || null);
+            } catch {}
+          }
         }}
-        paymentId={manualPaymentId}
         amount={payable}
         tournamentTitle={tournament?.title}
       />

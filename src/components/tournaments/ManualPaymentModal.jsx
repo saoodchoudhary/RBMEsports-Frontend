@@ -64,7 +64,7 @@ export default function ManualPaymentModal({
         showToast({
           type: "success",
           title: "Submitted",
-          message: "Payment proof submitted. Status: Pending Review"
+          message: "Payment proof submitted. Status: Under Review (Admin verification)"
         })
       );
 
@@ -76,8 +76,20 @@ export default function ManualPaymentModal({
     }
   }
 
+  function handleCancel() {
+    // ✅ Cancel means: payment is still pending, but slot is booked already
+    dispatch(
+      showToast({
+        type: "info",
+        title: "Payment Pending",
+        message: "Your slot is booked. You can submit UTR anytime from 'Payment Pending'."
+      })
+    );
+    onClose?.();
+  }
+
   return (
-    <Modal open={open} onClose={onClose} title="Pay via UPI (Manual)" size="md">
+    <Modal open={open} onClose={handleCancel} title="Pay via UPI (Manual)" size="md">
       <div className="space-y-4">
         <div className="p-3 rounded-lg border border-blue-200 bg-blue-50 text-xs text-blue-800 flex gap-2">
           <FiInfo className="w-4 h-4 mt-0.5" />
@@ -136,7 +148,7 @@ export default function ManualPaymentModal({
         />
 
         <div className="flex justify-end gap-2 pt-2">
-          <Button type="button" variant="outline" onClick={onClose}>
+          <Button type="button" variant="outline" onClick={handleCancel}>
             Cancel
           </Button>
           <Button type="button" onClick={submitProof} loading={submitting}>
