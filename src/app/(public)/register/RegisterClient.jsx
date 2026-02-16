@@ -63,7 +63,6 @@ export default function RegisterClient() {
 
     setLoading(true);
     try {
-      // ✅ backend aligned payload (phone removed)
       await api.register({
         name: name.trim(),
         email: email.trim(),
@@ -101,34 +100,34 @@ export default function RegisterClient() {
       <div className="w-full max-w-4xl">
         <div className="relative">
           <div className="absolute -inset-6 bg-gradient-to-r from-blue-500 to-purple-500 rounded-[2.5rem] blur-2xl opacity-10" />
-          <div className="relative card p-8 md:p-10 border-2 border-slate-100 shadow-2xl">
+          <div className="relative card p-6 sm:p-8 md:p-10 border-2 border-slate-100 shadow-2xl">
             {/* Header */}
-            <div className="text-center mb-8">
-              <div className="inline-flex p-3 rounded-2xl bg-gradient-to-br from-blue-50 to-purple-50 border border-blue-100 mb-4">
-                <GiTrophy className="w-8 h-8 text-blue-700" />
+            <div className="text-center mb-6 sm:mb-8">
+              <div className="inline-flex p-3 rounded-2xl bg-gradient-to-br from-blue-50 to-purple-50 border border-blue-100 mb-3 sm:mb-4">
+                <GiTrophy className="w-7 h-7 sm:w-8 sm:h-8 text-blue-700" />
               </div>
-              <h1 className="text-3xl font-extrabold text-slate-900">Create your account</h1>
-              <p className="text-slate-600 mt-2">
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900">Create your account</h1>
+              <p className="text-sm sm:text-base text-slate-600 mt-2">
                 Register on <span className="font-semibold">rbmesports.vercel.app</span> to join skill-based BGMI tournaments.
               </p>
             </div>
 
             {/* Form */}
-            <form onSubmit={onSubmit} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <form onSubmit={onSubmit} className="space-y-5 sm:space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
                 {/* Name */}
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                     <FiUser className="w-4 h-4" />
                     Full Name
                   </label>
-                  <Input
+                  <input
+                    type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Your name"
-                    icon={<FiUser className="w-4 h-4 text-slate-400" />}
                     required
-                    className="text-base py-3 px-4"
+                    className="w-full text-base py-3 px-4 rounded-lg border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
                   />
                 </div>
 
@@ -138,14 +137,13 @@ export default function RegisterClient() {
                     <FiMail className="w-4 h-4" />
                     Email Address
                   </label>
-                  <Input
+                  <input
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@example.com"
-                    icon={<FiMail className="w-4 h-4 text-slate-400" />}
                     required
-                    className="text-base py-3 px-4"
+                    className="w-full text-base py-3 px-4 rounded-lg border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
                   />
                 </div>
 
@@ -156,19 +154,18 @@ export default function RegisterClient() {
                     Password
                   </label>
                   <div className="relative">
-                    <Input
+                    <input
                       type={showPassword ? "text" : "password"}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Create a password"
-                      icon={<FiLock className="w-4 h-4 text-slate-400" />}
+                      placeholder="Min 6 characters"
                       required
-                      className="text-base py-3 px-4 pr-12"
+                      className="w-full text-base py-3 px-4 pr-12 rounded-lg border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword((v) => !v)}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors p-1"
                       aria-label="Toggle password visibility"
                     >
                       {showPassword ? <FiEyeOff className="w-5 h-5" /> : <FiEye className="w-5 h-5" />}
@@ -183,14 +180,13 @@ export default function RegisterClient() {
                     <FiLock className="w-4 h-4" />
                     Confirm Password
                   </label>
-                  <Input
+                  <input
                     type={showPassword ? "text" : "password"}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Re-enter password"
-                    icon={<FiLock className="w-4 h-4 text-slate-400" />}
                     required
-                    className="text-base py-3 px-4"
+                    className="w-full text-base py-3 px-4 rounded-lg border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
                   />
                   {password && confirmPassword && password !== confirmPassword ? (
                     <p className="text-xs text-rose-600 font-medium">Passwords do not match</p>
@@ -203,13 +199,13 @@ export default function RegisterClient() {
                     <FaGamepad className="w-4 h-4" />
                     BGMI ID
                   </label>
-                  <Input
+                  <input
+                    type="text"
                     value={bgmiId}
                     onChange={(e) => setBgmiId(e.target.value)}
                     placeholder="Your BGMI numeric ID"
-                    icon={<FaGamepad className="w-4 h-4 text-slate-400" />}
                     required
-                    className="text-base py-3 px-4"
+                    className="w-full text-base py-3 px-4 rounded-lg border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
                   />
                   <p className="text-xs text-slate-500">This helps verify tournament participation.</p>
                 </div>
@@ -220,13 +216,13 @@ export default function RegisterClient() {
                     <FiUser className="w-4 h-4" />
                     In‑Game Name (IGN)
                   </label>
-                  <Input
+                  <input
+                    type="text"
                     value={inGameName}
                     onChange={(e) => setInGameName(e.target.value)}
                     placeholder="Your BGMI name"
-                    icon={<FiUser className="w-4 h-4 text-slate-400" />}
                     required
-                    className="text-base py-3 px-4"
+                    className="w-full text-base py-3 px-4 rounded-lg border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
                   />
                 </div>
               </div>
@@ -238,7 +234,7 @@ export default function RegisterClient() {
                     type="checkbox"
                     checked={acceptTerms}
                     onChange={(e) => setAcceptTerms(e.target.checked)}
-                    className="h-5 w-5 text-blue-600 rounded border-slate-300 focus:ring-blue-500 mt-0.5"
+                    className="h-5 w-5 text-blue-600 rounded border-slate-300 focus:ring-blue-500 mt-0.5 flex-shrink-0"
                   />
                   <div className="text-sm text-slate-700">
                     <span className="font-semibold">I agree to</span>{" "}
@@ -259,7 +255,7 @@ export default function RegisterClient() {
               {/* Submit */}
               <Button
                 type="submit"
-                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 py-3.5 text-lg font-semibold shadow-lg hover:shadow-xl transition-all duration-300"
+                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 py-3 sm:py-3.5 text-base sm:text-lg font-semibold shadow-lg hover:shadow-xl transition-all duration-300"
                 disabled={loading}
                 loading={loading}
               >
@@ -280,8 +276,8 @@ export default function RegisterClient() {
             </form>
 
             {/* Login link */}
-            <div className="mt-8 pt-6 border-t border-slate-200 text-center">
-              <p className="text-slate-600">
+            <div className="mt-6 sm:mt-8 pt-5 sm:pt-6 border-t border-slate-200 text-center">
+              <p className="text-sm sm:text-base text-slate-600">
                 Already have an account?{" "}
                 <Link
                   href={`/login?next=${encodeURIComponent(next)}`}
@@ -298,10 +294,10 @@ export default function RegisterClient() {
         </div>
 
         {/* bottom note */}
-        <div className="mt-10 text-center">
-          <div className="inline-flex items-center gap-2 text-xs text-slate-500 bg-white/80 px-4 py-2 rounded-full border border-slate-200">
+        <div className="mt-8 sm:mt-10 text-center">
+          <div className="inline-flex items-center gap-2 text-xs text-slate-500 bg-white/80 px-3 sm:px-4 py-2 rounded-full border border-slate-200">
             <FiShield className="w-4 h-4" />
-            <span>We never store card/UPI PIN. Payments are handled securely by Razorpay.</span>
+            <span className="text-center">We never store card/UPI PIN. Payments are handled securely by Razorpay.</span>
           </div>
         </div>
       </div>

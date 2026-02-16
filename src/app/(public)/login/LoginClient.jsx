@@ -51,12 +51,7 @@ export default function LoginClient() {
 
     setLoading(true);
     try {
-      // backend-aligned: login -> fetchMe -> redirect
       await api.login({ email, password });
-
-      // optional: if you have remember-me token logic in backend cookies, keep checkbox only UI.
-      // If you store token manually somewhere, do it here based on rememberMe.
-
       await dispatch(fetchMe());
       dispatch(
         showToast({
@@ -108,22 +103,22 @@ export default function LoginClient() {
           {/* Left: Form */}
           <div className="relative">
             <div className="absolute -inset-6 bg-gradient-to-r from-blue-500 to-purple-500 rounded-[2.5rem] blur-2xl opacity-10" />
-            <div className="relative card p-8 lg:p-10 border-2 border-slate-100 shadow-2xl">
+            <div className="relative card p-6 sm:p-8 lg:p-10 border-2 border-slate-100 shadow-2xl">
               {/* Header */}
-              <div className="text-center mb-10">
-                <div className="inline-flex p-4 rounded-2xl bg-gradient-to-br from-blue-50 to-cyan-50 mb-4 border border-blue-100">
-                  <MdOutlineSportsEsports className="w-8 h-8 text-blue-600" />
+              <div className="text-center mb-8 sm:mb-10">
+                <div className="inline-flex p-3 sm:p-4 rounded-2xl bg-gradient-to-br from-blue-50 to-cyan-50 mb-3 sm:mb-4 border border-blue-100">
+                  <MdOutlineSportsEsports className="w-7 h-7 sm:w-8 sm:h-8 text-blue-600" />
                 </div>
-                <h1 className="text-3xl font-extrabold text-slate-900 mb-2">
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 mb-2">
                   Login to RBM ESports
                 </h1>
-                <p className="text-slate-600">
+                <p className="text-sm sm:text-base text-slate-600">
                   Access tournaments, wallet, and your account dashboard.
                 </p>
               </div>
 
               {/* Form */}
-              <form onSubmit={onSubmit} className="space-y-6">
+              <form onSubmit={onSubmit} className="space-y-5 sm:space-y-6">
                 {/* Email */}
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
@@ -134,10 +129,9 @@ export default function LoginClient() {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Enter your email address"
-                    icon={<FiMail className="w-4 h-4 text-slate-400" />}
+                    placeholder="you@example.com"
                     required
-                    className="text-base py-3 px-4"
+                    className="w-full text-base py-3 px-4 rounded-lg border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
                   />
                 </div>
 
@@ -151,26 +145,25 @@ export default function LoginClient() {
                     <button
                       type="button"
                       onClick={handleForgotPassword}
-                      className="text-xs text-blue-600 hover:text-blue-700 font-semibold"
+                      className="text-xs text-blue-600 hover:text-blue-700 font-semibold transition-colors"
                     >
                       Forgot Password?
                     </button>
                   </div>
 
                   <div className="relative">
-                    <Input
+                    <input
                       type={showPassword ? "text" : "password"}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Enter your password"
-                      icon={<FiLock className="w-4 h-4 text-slate-400" />}
+                      placeholder="Enter password"
                       required
-                      className="text-base py-3 px-4 pr-12"
+                      className="w-full text-base py-3 px-4 pr-12 rounded-lg border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword((v) => !v)}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors p-1"
                       aria-label="Toggle password visibility"
                     >
                       {showPassword ? <FiEyeOff className="w-5 h-5" /> : <FiEye className="w-5 h-5" />}
@@ -194,17 +187,17 @@ export default function LoginClient() {
                 {/* Submit */}
                 <Button
                   type="submit"
-                  className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 py-3.5 text-lg font-semibold shadow-lg hover:shadow-xl transition-all duration-300"
+                  className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 py-3 sm:py-3.5 text-base sm:text-lg font-semibold shadow-lg hover:shadow-xl transition-all duration-300"
                   disabled={loading}
                   loading={loading}
                 >
                   {loading ? (
                     "Authenticating..."
                   ) : (
-                    <>
-                      <FiLogIn className="w-5 h-5 mr-2" />
+                    <span className="flex items-center justify-center gap-2">
+                      <FiLogIn className="w-5 h-5" />
                       Login
-                    </>
+                    </span>
                   )}
                 </Button>
 
@@ -222,7 +215,7 @@ export default function LoginClient() {
                 <Button
                   type="button"
                   variant="outline"
-                  className="w-full border-slate-300 hover:border-slate-400 hover:bg-slate-50 py-3"
+                  className="w-full border-slate-300 hover:border-slate-400 hover:bg-slate-50 py-3 transition-colors"
                   onClick={handleGoogleLogin}
                 >
                   <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" aria-hidden="true">
@@ -231,13 +224,13 @@ export default function LoginClient() {
                     <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
                     <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
                   </svg>
-                  Continue with Google (soon)
+                  <span className="text-sm sm:text-base">Continue with Google (soon)</span>
                 </Button>
               </form>
 
               {/* Sign Up */}
-              <div className="mt-8 pt-6 border-t border-slate-200 text-center">
-                <p className="text-slate-600">
+              <div className="mt-6 sm:mt-8 pt-5 sm:pt-6 border-t border-slate-200 text-center">
+                <p className="text-sm sm:text-base text-slate-600">
                   New here?{" "}
                   <Link
                     href={`/register?next=${encodeURIComponent(next)}`}
@@ -254,7 +247,7 @@ export default function LoginClient() {
           </div>
 
           {/* Right: Benefits */}
-          <div className="space-y-6">
+          <div className="space-y-6 hidden lg:block">
             <div className="rounded-2xl border border-slate-200 bg-white p-6 lg:p-8">
               <div className="flex items-center gap-3 mb-4">
                 <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shadow-lg">
@@ -290,7 +283,7 @@ export default function LoginClient() {
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-3 justify-center lg:justify-start">
+            <div className="flex flex-wrap gap-3">
               <Badge text="Verified platform" />
               <Badge text="Secure checkout" />
               <Badge text="Fair play rules" />
@@ -306,10 +299,10 @@ export default function LoginClient() {
         </div>
 
         {/* bottom note */}
-        <div className="mt-10 text-center">
-          <div className="inline-flex items-center gap-2 text-xs text-slate-500 bg-white/80 px-4 py-2 rounded-full border border-slate-200">
+        <div className="mt-8 sm:mt-10 text-center">
+          <div className="inline-flex items-center gap-2 text-xs text-slate-500 bg-white/80 px-3 sm:px-4 py-2 rounded-full border border-slate-200">
             <FiShield className="w-4 h-4" />
-            <span>We never store card/UPI PIN. Payments are handled securely by Razorpay.</span>
+            <span className="text-center">We never store card/UPI PIN. Payments are handled securely by Razorpay.</span>
           </div>
         </div>
       </div>

@@ -473,7 +473,7 @@ export default function Navbar() {
               Quick Actions
             </p>
             
-            <a
+            {/* <a
               href="/scrims"
               className="flex items-center gap-4 rounded-xl border-2 border-gray-100 bg-white px-4 py-3.5 transition-all hover:border-blue-600"
               onClick={() => setMobileOpen(false)}
@@ -485,7 +485,7 @@ export default function Navbar() {
                 <span className="text-sm font-bold text-gray-900">Join Scrims</span>
                 <span className="text-xs text-gray-500">Practice matches available</span>
               </div>
-            </a>
+            </a> */}
 
             {user && (
               <button
