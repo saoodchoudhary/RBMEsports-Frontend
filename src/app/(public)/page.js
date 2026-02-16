@@ -583,7 +583,7 @@ export default function HomePage() {
                   <FiChevronRight className="w-3.5 h-3.5" />
                 </a>
               </div>
-              <div className="flex-1">
+              <div className="flex-1 w-full">
                 <div className="relative h-40 sm:h-44 lg:h-48 w-full max-w-xs mx-auto">
                   <div className="absolute inset-0 bg-gradient-to-r from-red-600/5 to-blue-600/5 rounded-2xl"></div>
                   <div className="relative h-full w-full flex items-center justify-center">
