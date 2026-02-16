@@ -32,12 +32,12 @@ const supportLinks = [
 ];
   // Replace "#" with your real URLs
   const socialLinks = [
-    { href: "#", icon: <FiInstagram className="w-5 h-5" />, label: "Instagram" },
-    { href: "#", icon: <FiTwitter className="w-5 h-5" />, label: "Twitter" },
-    { href: "#", icon: <BsDiscord className="w-5 h-5" />, label: "Discord" },
-    { href: "#", icon: <SiTelegram className="w-5 h-5" />, label: "Telegram" },
-    { href: "#", icon: <FiYoutube className="w-5 h-5" />, label: "YouTube" },
-    { href: "#", icon: <FiFacebook className="w-5 h-5" />, label: "Facebook" }
+    { href: "https://www.instagram.com/rbm.esports", icon: <FiInstagram className="w-5 h-5" />, label: "Instagram" },
+    // { href: "#", icon: <FiTwitter className="w-5 h-5" />, label: "Twitter" },
+    // { href: "#", icon: <BsDiscord className="w-5 h-5" />, label: "Discord" },
+    // { href: "#", icon: <SiTelegram className="w-5 h-5" />, label: "Telegram" },
+    { href: "https://www.youtube.com/@rbm.esports", icon: <FiYoutube className="w-5 h-5" />, label: "YouTube" },
+    // { href: "#", icon: <FiFacebook className="w-5 h-5" />, label: "Facebook" }
   ];
 
   const trustPoints = [
