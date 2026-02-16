@@ -22,8 +22,8 @@ export default function ManualPaymentModal({
   const [submitting, setSubmitting] = useState(false);
 
   // Set your real payee details here
-  const PAYEE_UPI = "rbmesports@upi";
-  const PAYEE_NAME = "RBM ESports";
+  const PAYEE_UPI = "saoodahmad9@ybl";
+  const PAYEE_NAME = "Saood Ahmad"; // ✅ Update with real name
   const QR_URL = "/upi-qr.png"; // ✅ public/upi-qr.png
 
   useEffect(() => {
@@ -118,7 +118,6 @@ export default function ManualPaymentModal({
               Copy
             </Button>
           </div>
-
           <div className="mt-4 flex justify-center">
             <img
               src={QR_URL}
